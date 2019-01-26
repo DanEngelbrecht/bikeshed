@@ -1,0 +1,13 @@
+language: cpp
+sudo: true
+compiler:
+  - clang
+
+os:
+  - linux
+  - osx
+
+script:
+  - if [ "$TRAVIS_OS_NAME" == "osx" ]; then sh ./travis-clang.sh; fi
+  - if [ "$TRAVIS_OS_NAME" == "linux" ]; then sh ./travis-clang.sh; fi
+  - if [ "$TRAVIS_OS_NAME" == "windows" ]; then sh ./travis-cl.sh; fi
