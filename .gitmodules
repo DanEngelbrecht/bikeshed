@@ -1,0 +1,3 @@
+[submodule "third-party/containers"]
+	path = third-party/containers
+	url = https://github.com/JCash/containers.git
