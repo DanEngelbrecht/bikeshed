@@ -12,12 +12,13 @@ struct SyncPrimitive
     void (*ReleaseLock)(SyncPrimitive* primitive);
 };
 
+// We probably want to extend TTaskID to 32-bit and use some bits for generation to avoid using stale ids
 typedef uint16_t TTaskID;
 
 enum TaskResult
 {
     TASK_RESULT_COMPLETE,   // Call ResolveTask, schedule any resolve tasks, Call FreeTask
-    TASK_RESULT_BLOCKED,    // Task is blocked, call ReadyTask when ready to execute again
+    TASK_RESULT_BLOCKED,    // Task is blocked, call ReadyTasks when ready to execute again
     TASK_RESULT_YIELD       // Call ReadyTasks to reschedule the task at en of queue
 };
 
