@@ -2,7 +2,7 @@
 
 set +e
 
-./compile_clang_debug.sh
+sh ./compile_clang_debug.sh
 ./build/test_debug
-./compile_clang.sh
+sh ./compile_clang.sh
 ./build/test
