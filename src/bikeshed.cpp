@@ -60,6 +60,7 @@ HShed CreateShed(void* mem, uint16_t max_task_count)
     shed->m_FreeTaskCount = max_task_count;
     shed->m_FreeDependencyCount = max_task_count;
     shed->m_FreeReadyCount = max_task_count;
+    shed->m_FirstReadyIndex = max_task_count;
     uint8_t* p = (uint8_t*)mem;
     p += sizeof(Shed);
     shed->m_Tasks = (Task*)p;
@@ -92,7 +93,7 @@ bool CreateTasks(HShed shed, uint16_t task_count, TaskFunc* task_functions, void
     {
         return false;
     }
-    for (uint16_t i = 0; i < task_count; ++task_count)
+    for (uint16_t i = 0; i < task_count; ++i)
     {
         TTaskID task_id = shed->m_FreeTaskIndexes[--shed->m_FreeTaskCount];
         out_task_ids[i] = task_id;
@@ -107,7 +108,7 @@ bool CreateTasks(HShed shed, uint16_t task_count, TaskFunc* task_functions, void
 
 void FreeTasks(HShed shed, uint16_t task_count, const TTaskID* task_ids)
 {
-    for (uint16_t i = 0; i < task_count; ++task_count)
+    for (uint16_t i = 0; i < task_count; ++i)
     {
         TTaskID task_id = task_ids[i];
         Task* task = &shed->m_Tasks[task_id];
@@ -131,7 +132,7 @@ bool AddTaskDependencies(HShed shed, TTaskID task_id, uint16_t task_count, const
 
     Task* task = &shed->m_Tasks[task_id];
     TDependencyIndex* prev_dependency_index_ptr = &task->m_FirstDependency;
-    for (uint16_t i = 0; i < task_count; ++task_count)
+    for (uint16_t i = 0; i < task_count; ++i)
     {
         TTaskID dependency_task_id = dependency_task_ids[i];
         TDependencyIndex dependency_index = shed->m_FreeDependencyIndexes[--shed->m_FreeDependencyCount];
@@ -153,7 +154,7 @@ bool ReadyTasks(HShed shed, uint16_t task_count, const TTaskID* task_ids)
     }
 
     TReadyIndex* prev_ready_index_ptr = &shed->m_FirstReadyIndex;
-    for (uint16_t i = 0; i < task_count; ++task_count)
+    for (uint16_t i = 0; i < task_count; ++i)
     {
         TTaskID task_id = task_ids[i];
         TReadyIndex ready_index = shed->m_FreeReadyTaskIndexes[--shed->m_FreeReadyCount];
@@ -199,7 +200,7 @@ bool GetFirstReadyTask(HShed shed, TTaskID* out_task_id)
     return true;
 }
 
-void ExecuteOneTask(HShed shed, TTaskID task_id, uint16_t* resolved_task_count, TTaskID* out_resolved_tasks)
+void ExecuteTask(HShed shed, TTaskID task_id, uint16_t* resolved_task_count, TTaskID* out_resolved_tasks)
 {
     Task* task = &shed->m_Tasks[task_id];
 
