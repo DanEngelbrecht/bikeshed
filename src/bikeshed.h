@@ -12,8 +12,17 @@ struct SyncPrimitive
     void (*ReleaseLock)(SyncPrimitive* primitive);
 };
 
+// We probably want to extend TTaskID to 32-bit and use some bits for generation to avoid using stale ids
 typedef uint16_t TTaskID;
-typedef void (*TaskFunc)(HShed shed, TTaskID task_id, void* context_data);
+
+enum TaskResult
+{
+    TASK_RESULT_COMPLETE,   // Call ResolveTask, schedule any resolve tasks, Call FreeTask
+    TASK_RESULT_BLOCKED,    // Task is blocked, call ReadyTasks when ready to execute again
+    TASK_RESULT_YIELD       // Call ReadyTasks to reschedule the task at en of queue
+};
+
+typedef TaskResult (*TaskFunc)(HShed shed, TTaskID task_id, void* context_data);
 
 uint32_t GetShedSize(uint16_t max_task_count);
 HShed CreateShed(void* mem, uint16_t max_task_count, SyncPrimitive* sync_primitive);
@@ -24,6 +33,6 @@ bool ReadyTasks(HShed shed, uint16_t task_count, const TTaskID* task_ids);
 bool AddTaskDependencies(HShed shed, TTaskID task_id, uint16_t task_count, const TTaskID* dependency_task_ids);
 void ResolveTask(HShed shed, TTaskID task_id, uint16_t* resolved_task_count, TTaskID* out_resolved_tasks);
 bool GetFirstReadyTask(HShed shed, TTaskID* out_task_id);
-void ExecuteTask(HShed shed, TTaskID task_id, uint16_t* resolved_task_count, TTaskID* out_resolved_tasks);
+TaskResult ExecuteTask(HShed shed, TTaskID task_id);
 
 }
