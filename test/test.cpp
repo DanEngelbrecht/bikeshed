@@ -28,6 +28,10 @@ static void test_teardown(SCtx* )
 
 static void create(SCtx* )
 {
+	uint32_t size = bikeshed::GetShedSize(16);
+	void* p = malloc(size);
+	bikeshed::HShed shed = bikeshed::CreateShed(p, 16);
+	free(shed);
 }
 
 TEST_BEGIN(test, main_setup, main_teardown, test_setup, test_teardown)
