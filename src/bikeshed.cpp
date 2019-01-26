@@ -266,13 +266,17 @@ bool GetFirstReadyTask(HShed shed, TTaskID* out_task_id)
     return true;
 }
 
-void ExecuteTask(HShed shed, TTaskID task_id, uint16_t* resolved_task_count, TTaskID* out_resolved_tasks)
+TaskResult ExecuteTask(HShed shed, TTaskID task_id, uint16_t* resolved_task_count, TTaskID* out_resolved_tasks)
 {
     Task* task = &shed->m_Tasks[task_id];
 
-    task->m_TaskFunc(shed, task_id, task->m_TaskContextData);
+    TaskResult result = task->m_TaskFunc(shed, task_id, task->m_TaskContextData);
 
-    ResolveTask(shed, task_id, resolved_task_count, out_resolved_tasks);
+    if (result == TASK_RESULT_COMPLETE)
+    {
+        ResolveTask(shed, task_id, resolved_task_count, out_resolved_tasks);
+    }
+    return result;
 }
 
 }

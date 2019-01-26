@@ -46,11 +46,12 @@ static void single_task(SCtx* )
             , shed(0)
             , executed(false)
         { }
-        static void Compute(bikeshed::HShed shed, bikeshed::TTaskID task_id, TaskData* task_data)
+        static bikeshed::TaskResult Compute(bikeshed::HShed shed, bikeshed::TTaskID task_id, TaskData* task_data)
         {
             task_data->shed = shed;
             task_data->executed = true;
             task_data->task_id = task_id;
+            return bikeshed::TASK_RESULT_COMPLETE;
         }
         bikeshed::HShed shed;
         bikeshed::TTaskID task_id;
@@ -71,7 +72,8 @@ static void single_task(SCtx* )
     ASSERT_TRUE(bikeshed::GetFirstReadyTask(shed, &ready_task));
     ASSERT_EQ(task_id, ready_task);
     uint16_t resolved_task_count = 79;
-    bikeshed::ExecuteTask(shed, ready_task, &resolved_task_count, 0);
+    bikeshed::TaskResult result = bikeshed::ExecuteTask(shed, ready_task, &resolved_task_count, 0);
+    ASSERT_EQ(bikeshed::TASK_RESULT_COMPLETE, result);
     ASSERT_EQ(0, resolved_task_count);
 
     ASSERT_EQ(task.shed, shed);
@@ -115,11 +117,12 @@ static void test_sync(SCtx* )
             , shed(0)
             , executed(false)
         { }
-        static void Compute(bikeshed::HShed shed, bikeshed::TTaskID task_id, TaskData* task_data)
+        static bikeshed::TaskResult Compute(bikeshed::HShed shed, bikeshed::TTaskID task_id, TaskData* task_data)
         {
             task_data->shed = shed;
             task_data->executed = true;
             task_data->task_id = task_id;
+            return bikeshed::TASK_RESULT_COMPLETE;
         }
         bikeshed::HShed shed;
         bikeshed::TTaskID task_id;
@@ -140,7 +143,8 @@ static void test_sync(SCtx* )
     ASSERT_TRUE(bikeshed::GetFirstReadyTask(shed, &ready_task));
     ASSERT_EQ(task_id, ready_task);
     uint16_t resolved_task_count = 79;
-    bikeshed::ExecuteTask(shed, ready_task, &resolved_task_count, 0);
+    bikeshed::TaskResult result = bikeshed::ExecuteTask(shed, ready_task, &resolved_task_count, 0);
+    ASSERT_EQ(bikeshed::TASK_RESULT_COMPLETE, result);
     ASSERT_EQ(0, resolved_task_count);
 
     ASSERT_EQ(task.shed, shed);
