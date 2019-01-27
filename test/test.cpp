@@ -1,5 +1,7 @@
 #include "../src/bikeshed.h"
 
+#include "../third-party/nadir/src/nadir.h"
+
 #include <memory>
 
 #define ALIGN_SIZE(x, align)    (((x) + ((align) - 1)) & ~((align) - 1))
@@ -308,10 +310,179 @@ static void test_dependency(SCtx* )
     free(shed);
 }
 
+static void test_worker_thread(SCtx* )
+{
+	struct NadirLock
+	{
+		bikeshed::SyncPrimitive m_SyncPrimitive;
+		NadirLock()
+			: m_SyncPrimitive{lock, unlock, signal}
+			, m_Lock(nadir::CreateLock(malloc(nadir::GetNonReentrantLockSize())))
+			, m_ConditionVariable(nadir::CreateConditionVariable(malloc(nadir::GetConditionVariableSize()), m_Lock))
+		{
+
+		}
+        ~NadirLock()
+        {
+            nadir::DeleteConditionVariable(m_ConditionVariable);
+            free(m_ConditionVariable);
+            nadir::DeleteNonReentrantLock(m_Lock);
+            free(m_Lock);
+        }
+		static bool lock(bikeshed::SyncPrimitive* primitive){
+            NadirLock* _this = (NadirLock*)primitive;
+			nadir::LockNonReentrantLock(_this->m_Lock);
+			return true;
+		}
+		static void unlock(bikeshed::SyncPrimitive* primitive){
+            NadirLock* _this = (NadirLock*)primitive;
+			nadir::UnlockNonReentrantLock(_this->m_Lock);
+		}
+		static void signal(bikeshed::SyncPrimitive* primitive, uint16_t ready_count){
+            NadirLock* _this = (NadirLock*)primitive;
+            if (ready_count > 1)
+            {
+                nadir::WakeAll(_this->m_ConditionVariable);
+            }
+            else
+            {
+                nadir::WakeOne(_this->m_ConditionVariable);
+            }
+		}
+		nadir::HNonReentrantLock m_Lock;
+		nadir::HConditionVariable m_ConditionVariable;
+	}sync_primitive;
+
+    struct ThreadContext
+    {
+        ThreadContext()
+            : shed(0)
+            , stop(0)
+            , condition_variable(0)
+            , thread(0)
+        {}
+
+        ~ThreadContext()
+        {
+        }
+
+        bool CreateThread(bikeshed::HShed in_shed, nadir::HConditionVariable in_condition_variable, nadir::TAtomic32* in_stop)
+        {
+            shed = in_shed;
+            stop = in_stop;
+            condition_variable = in_condition_variable;
+            thread = nadir::CreateThread(malloc(nadir::GetThreadSize()), ThreadContext::Execute, 0, this);
+            return thread != 0;
+        }
+
+        void DisposeThread()
+        {
+            nadir::DeleteThread(thread);
+            free(thread);
+        }
+
+        static int32_t Execute(void* context)
+        {
+            ThreadContext* _this = (ThreadContext*)context;
+            while(true)
+            {
+                if (nadir::SleepConditionVariable(_this->condition_variable, nadir::TIMEOUT_INFINITE))
+                {
+                    if (nadir::AtomicAdd32(_this->stop, -1) >= 0)
+                    {
+                        break;
+                    }
+                    nadir::AtomicAdd32(_this->stop, 1);
+
+                    bikeshed::TTaskID task_id;
+                    if (bikeshed::GetFirstReadyTask(_this->shed, &task_id))
+                    {
+                        bikeshed::TaskResult result = bikeshed::ExecuteTask(_this->shed, task_id);
+                        switch (result)
+                        {
+                            case bikeshed::TASK_RESULT_COMPLETE:
+                                {
+                                    uint16_t resolved_task_count;
+                                    bikeshed::TTaskID resolved_task_ids[8];
+                                    bikeshed::ResolveTask(_this->shed, task_id, &resolved_task_count, resolved_task_ids);
+                                    bikeshed::ReadyTasks(_this->shed, resolved_task_count, resolved_task_ids);
+                                }
+                                break;
+                            case bikeshed::TASK_RESULT_BLOCKED:
+                                break;
+                            case bikeshed::TASK_RESULT_YIELD:
+                                bikeshed::ReadyTasks(_this->shed, 1, &task_id);
+                                break;
+                        }
+                    }
+                }
+            }
+            return 0;
+        }
+
+        nadir::TAtomic32* stop;
+        bikeshed::HShed shed;
+        nadir::HConditionVariable condition_variable;
+        nadir::HThread thread;
+    };
+
+    bikeshed::HShed shed = bikeshed::CreateShed(malloc(bikeshed::GetShedSize(1)), 1, &sync_primitive.m_SyncPrimitive);
+    ASSERT_NE(0, shed);
+
+    nadir::TAtomic32 stop = 0;
+
+    struct TaskData {
+        TaskData(nadir::TAtomic32* stop)
+            : stop(stop)
+            , task_id((bikeshed::TTaskID)-1)
+            , shed(0)
+            , executed(0)
+        { }
+        static bikeshed::TaskResult Compute(bikeshed::HShed shed, bikeshed::TTaskID task_id, void* context_data)
+        {
+            TaskData* _this = (TaskData*)context_data;
+            _this->shed = shed;
+            ++_this->executed;
+            _this->task_id = task_id;
+            nadir::AtomicAdd32(_this->stop, 1);
+            return bikeshed::TASK_RESULT_COMPLETE;
+        }
+        nadir::TAtomic32* stop;
+        bikeshed::HShed shed;
+        bikeshed::TTaskID task_id;
+        uint32_t executed;
+    } task(&stop);
+
+    bikeshed::TaskFunc funcs[1] = {TaskData::Compute};
+    void* contexts[1] = {&task};
+
+    ThreadContext thread_context;
+    thread_context.CreateThread(shed, sync_primitive.m_ConditionVariable, &stop);
+
+    bikeshed::TTaskID task_id;
+    ASSERT_TRUE(bikeshed::CreateTasks(shed, 1, funcs, contexts, &task_id));
+    ASSERT_TRUE(bikeshed::ReadyTasks(shed, 1, &task_id));
+
+    nadir::WakeAll(sync_primitive.m_ConditionVariable);
+
+    nadir::JoinThread(thread_context.thread, nadir::TIMEOUT_INFINITE);
+
+    ASSERT_EQ(shed, task.shed);
+    ASSERT_EQ(task_id, task.task_id);
+    ASSERT_EQ(1, task.executed);
+
+    bikeshed::FreeTasks(shed, 1, &task_id);
+    bikeshed::TTaskID ready_task;
+    ASSERT_TRUE(!bikeshed::GetFirstReadyTask(shed, &ready_task));
+
+    free(shed);
+}
+
 TEST_BEGIN(test, main_setup, main_teardown, test_setup, test_teardown)
     TEST(create)
     TEST(single_task)
     TEST(test_sync)
     TEST(test_ready_order)
     TEST(test_dependency)
+    TEST(test_worker_thread)
 TEST_END(test)
