@@ -4,9 +4,9 @@
 
 int main(int argc, const char** argv)
 {
-	(void)argc;
-	(void)argv;
+    (void)argc;
+    (void)argv;
 
-	RUN_ALL();
-	return 0;
+    RUN_ALL();
+    return 0;
 }

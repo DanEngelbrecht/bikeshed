@@ -88,31 +88,31 @@ static void single_task(SCtx* )
 
 static void test_sync(SCtx* )
 {
-	struct FakeLock
-	{
-		bikeshed::SyncPrimitive m_SyncPrimitive;
-		FakeLock()
-			: m_SyncPrimitive{lock, unlock, signal}
-			, lock_count(0)
-			, unlock_count(0)
+    struct FakeLock
+    {
+        bikeshed::SyncPrimitive m_SyncPrimitive;
+        FakeLock()
+            : m_SyncPrimitive{lock, unlock, signal}
+            , lock_count(0)
+            , unlock_count(0)
             , ready_count(0)
-		{
+        {
 
-		}
-		static bool lock(bikeshed::SyncPrimitive* primitive){
-			((FakeLock*)primitive)->lock_count++;
-			return true;
-		}
-		static void unlock(bikeshed::SyncPrimitive* primitive){
-			((FakeLock*)primitive)->unlock_count++;
-		}
-		static void signal(bikeshed::SyncPrimitive* primitive, uint16_t ready_count){
-			((FakeLock*)primitive)->ready_count += ready_count;
-		}
-		uint32_t lock_count;
-		uint32_t unlock_count;
-		uint32_t ready_count;
-	}lock;
+        }
+        static bool lock(bikeshed::SyncPrimitive* primitive){
+            ((FakeLock*)primitive)->lock_count++;
+            return true;
+        }
+        static void unlock(bikeshed::SyncPrimitive* primitive){
+            ((FakeLock*)primitive)->unlock_count++;
+        }
+        static void signal(bikeshed::SyncPrimitive* primitive, uint16_t ready_count){
+            ((FakeLock*)primitive)->ready_count += ready_count;
+        }
+        uint32_t lock_count;
+        uint32_t unlock_count;
+        uint32_t ready_count;
+    }lock;
     bikeshed::HShed shed = bikeshed::CreateShed(malloc(bikeshed::GetShedSize(1)), 1, &lock.m_SyncPrimitive);
     ASSERT_NE(0, shed);
 
@@ -158,8 +158,8 @@ static void test_sync(SCtx* )
     bikeshed::FreeTasks(shed, 1, &ready_task);
     ASSERT_TRUE(!bikeshed::GetFirstReadyTask(shed, &ready_task));
 
-	ASSERT_EQ(6, lock.lock_count);
-	ASSERT_EQ(6, lock.unlock_count);
+    ASSERT_EQ(6, lock.lock_count);
+    ASSERT_EQ(6, lock.unlock_count);
 
     free(shed);
 }
@@ -312,16 +312,16 @@ static void test_dependency(SCtx* )
 
 static void test_worker_thread(SCtx* )
 {
-	struct NadirLock
-	{
-		bikeshed::SyncPrimitive m_SyncPrimitive;
-		NadirLock()
-			: m_SyncPrimitive{lock, unlock, signal}
-			, m_Lock(nadir::CreateLock(malloc(nadir::GetNonReentrantLockSize())))
-			, m_ConditionVariable(nadir::CreateConditionVariable(malloc(nadir::GetConditionVariableSize()), m_Lock))
-		{
+    struct NadirLock
+    {
+        bikeshed::SyncPrimitive m_SyncPrimitive;
+        NadirLock()
+            : m_SyncPrimitive{lock, unlock, signal}
+            , m_Lock(nadir::CreateLock(malloc(nadir::GetNonReentrantLockSize())))
+            , m_ConditionVariable(nadir::CreateConditionVariable(malloc(nadir::GetConditionVariableSize()), m_Lock))
+        {
 
-		}
+        }
         ~NadirLock()
         {
             nadir::DeleteConditionVariable(m_ConditionVariable);
@@ -329,29 +329,29 @@ static void test_worker_thread(SCtx* )
             nadir::DeleteNonReentrantLock(m_Lock);
             free(m_Lock);
         }
-		static bool lock(bikeshed::SyncPrimitive* primitive){
+        static bool lock(bikeshed::SyncPrimitive* primitive){
             NadirLock* _this = (NadirLock*)primitive;
-			nadir::LockNonReentrantLock(_this->m_Lock);
-			return true;
-		}
-		static void unlock(bikeshed::SyncPrimitive* primitive){
+            nadir::LockNonReentrantLock(_this->m_Lock);
+            return true;
+        }
+        static void unlock(bikeshed::SyncPrimitive* primitive){
             NadirLock* _this = (NadirLock*)primitive;
-			nadir::UnlockNonReentrantLock(_this->m_Lock);
-		}
-		static void signal(bikeshed::SyncPrimitive* primitive, uint16_t ready_count){
+            nadir::UnlockNonReentrantLock(_this->m_Lock);
+        }
+        static void signal(bikeshed::SyncPrimitive* primitive, uint16_t ready_count){
             NadirLock* _this = (NadirLock*)primitive;
             if (ready_count > 1)
             {
                 nadir::WakeAll(_this->m_ConditionVariable);
             }
-            else
+            else if (ready_count > 0)
             {
                 nadir::WakeOne(_this->m_ConditionVariable);
             }
-		}
-		nadir::HNonReentrantLock m_Lock;
-		nadir::HConditionVariable m_ConditionVariable;
-	}sync_primitive;
+        }
+        nadir::HNonReentrantLock m_Lock;
+        nadir::HConditionVariable m_ConditionVariable;
+    }sync_primitive;
 
     struct ThreadContext
     {
@@ -462,8 +462,6 @@ static void test_worker_thread(SCtx* )
     bikeshed::TTaskID task_id;
     ASSERT_TRUE(bikeshed::CreateTasks(shed, 1, funcs, contexts, &task_id));
     ASSERT_TRUE(bikeshed::ReadyTasks(shed, 1, &task_id));
-
-    nadir::WakeAll(sync_primitive.m_ConditionVariable);
 
     nadir::JoinThread(thread_context.thread, nadir::TIMEOUT_INFINITE);
 
