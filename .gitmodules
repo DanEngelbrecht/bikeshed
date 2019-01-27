@@ -1,3 +1,3 @@
-[submodule "third-party/containers"]
-	path = third-party/containers
-	url = https://github.com/JCash/containers.git
+[submodule "third-party/jctest"]
+	path = third-party/jctest
+	url = https://github.com/DanEngelbrecht/jctest.git
