@@ -10,6 +10,7 @@ struct SyncPrimitive
 {
     bool (*AcquireLock)(SyncPrimitive* primitive);
     void (*ReleaseLock)(SyncPrimitive* primitive);
+    void (*SignalReady)(SyncPrimitive* primitive, uint16_t ready_count);
 };
 
 // We probably want to extend TTaskID to 32-bit and use some bits for generation to avoid using stale ids

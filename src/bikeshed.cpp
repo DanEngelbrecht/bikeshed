@@ -231,6 +231,7 @@ bool ReadyTasks(HShed shed, uint16_t task_count, const TTaskID* task_ids)
 
     if (shed->m_SyncPrimitive)
     {
+        shed->m_SyncPrimitive->SignalReady(shed->m_SyncPrimitive, task_count);
         shed->m_SyncPrimitive->ReleaseLock(shed->m_SyncPrimitive);
     }
     return true;

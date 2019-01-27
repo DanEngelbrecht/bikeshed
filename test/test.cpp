@@ -90,9 +90,10 @@ static void test_sync(SCtx* )
 	{
 		bikeshed::SyncPrimitive m_SyncPrimitive;
 		FakeLock()
-			: m_SyncPrimitive{lock, unlock}
+			: m_SyncPrimitive{lock, unlock, signal}
 			, lock_count(0)
 			, unlock_count(0)
+            , ready_count(0)
 		{
 
 		}
@@ -103,8 +104,12 @@ static void test_sync(SCtx* )
 		static void unlock(bikeshed::SyncPrimitive* primitive){
 			((FakeLock*)primitive)->unlock_count++;
 		}
+		static void signal(bikeshed::SyncPrimitive* primitive, uint16_t ready_count){
+			((FakeLock*)primitive)->ready_count += ready_count;
+		}
 		uint32_t lock_count;
 		uint32_t unlock_count;
+		uint32_t ready_count;
 	}lock;
     bikeshed::HShed shed = bikeshed::CreateShed(malloc(bikeshed::GetShedSize(1)), 1, &lock.m_SyncPrimitive);
     ASSERT_NE(0, shed);
@@ -136,6 +141,7 @@ static void test_sync(SCtx* )
     ASSERT_TRUE(!bikeshed::CreateTasks(shed, 1, funcs, contexts, &task_id));
 
     ASSERT_TRUE(bikeshed::ReadyTasks(shed, 1, &task_id));
+    ASSERT_EQ(1, lock.ready_count);
 
     bikeshed::TTaskID ready_task;
     ASSERT_TRUE(bikeshed::GetFirstReadyTask(shed, &ready_task));
