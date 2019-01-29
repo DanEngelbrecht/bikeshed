@@ -49,8 +49,8 @@ uint32_t GetShedSize(uint16_t max_task_count)
                     (uint32_t)(sizeof(Task) * max_task_count) +
                     (uint32_t)(sizeof(Dependency) * max_task_count) +
                     (uint32_t)(sizeof(ReadyTask) * max_task_count) +
-                    (uint32_t)(sizeof(TDependencyIndex) * max_task_count) +
                     (uint32_t)(sizeof(TTaskID) * max_task_count) +
+                    (uint32_t)(sizeof(TDependencyIndex) * max_task_count) +
                     (uint32_t)(sizeof(TReadyIndex) * max_task_count);
     return size;
 }
@@ -184,6 +184,10 @@ bool AddTaskDependencies(HShed shed, TTaskID task_id, uint16_t task_count, const
 
 bool ReadyTasks(HShed shed, uint16_t task_count, const TTaskID* task_ids)
 {
+    if (task_count == 0)
+    {
+        return true;
+    }
     if (shed->m_SyncPrimitive && !shed->m_SyncPrimitive->AcquireLock(shed->m_SyncPrimitive))
     {
         return false;
