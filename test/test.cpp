@@ -386,37 +386,37 @@ static void test_worker_thread(SCtx* )
             ThreadContext* _this = (ThreadContext*)context;
             while(true)
             {
-				if (nadir::AtomicAdd32(_this->stop, -1) >= 0)
-				{
-					break;
-				}
-				nadir::AtomicAdd32(_this->stop, 1);
+                if (nadir::AtomicAdd32(_this->stop, -1) >= 0)
+                {
+                    break;
+                }
+                nadir::AtomicAdd32(_this->stop, 1);
 
-				bikeshed::TTaskID task_id;
-				if (bikeshed::GetFirstReadyTask(_this->shed, &task_id))
-				{
-					bikeshed::TaskResult result = bikeshed::ExecuteTask(_this->shed, task_id);
-					switch (result)
-					{
-					case bikeshed::TASK_RESULT_COMPLETE:
-						{
-							uint16_t resolved_task_count;
-							bikeshed::TTaskID resolved_task_ids[8];
-							bikeshed::ResolveTask(_this->shed, task_id, &resolved_task_count, resolved_task_ids);
-							bikeshed::ReadyTasks(_this->shed, resolved_task_count, resolved_task_ids);
-						}
-						break;
-					case bikeshed::TASK_RESULT_BLOCKED:
-						break;
-					case bikeshed::TASK_RESULT_YIELD:
-						bikeshed::ReadyTasks(_this->shed, 1, &task_id);
-						break;
-					}
-				}
-				else
-				{
-					nadir::SleepConditionVariable(_this->condition_variable, nadir::TIMEOUT_INFINITE);
-				}
+                bikeshed::TTaskID task_id;
+                if (bikeshed::GetFirstReadyTask(_this->shed, &task_id))
+                {
+                    bikeshed::TaskResult result = bikeshed::ExecuteTask(_this->shed, task_id);
+                    switch (result)
+                    {
+                    case bikeshed::TASK_RESULT_COMPLETE:
+                        {
+                            uint16_t resolved_task_count;
+                            bikeshed::TTaskID resolved_task_ids[8];
+                            bikeshed::ResolveTask(_this->shed, task_id, &resolved_task_count, resolved_task_ids);
+                            bikeshed::ReadyTasks(_this->shed, resolved_task_count, resolved_task_ids);
+                        }
+                        break;
+                    case bikeshed::TASK_RESULT_BLOCKED:
+                        break;
+                    case bikeshed::TASK_RESULT_YIELD:
+                        bikeshed::ReadyTasks(_this->shed, 1, &task_id);
+                        break;
+                    }
+                }
+                else
+                {
+                    nadir::SleepConditionVariable(_this->condition_variable, nadir::TIMEOUT_INFINITE);
+                }
             }
             return 0;
         }
