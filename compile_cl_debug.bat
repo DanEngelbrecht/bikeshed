@@ -1,7 +1,10 @@
 @echo off
 
+call .\find_mvsc.bat
+
 if NOT DEFINED VCINSTALLDIR (
-    echo "No compatible visual studio found! run vcvarsall.bat first!"
+    echo "No Visual Studio installation found, aborting, try running run vcvarsall.bat first!"
+    exit 1
 )
 
 IF NOT EXIST build (
