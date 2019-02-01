@@ -56,61 +56,6 @@ struct Shed
     SyncPrimitive*      m_SyncPrimitive;
 };
 
-uint32_t GetShedSize(uint16_t max_task_count, uint16_t max_dependency_count)
-{
-    uint32_t size = (uint32_t)ALIGN_SIZE(sizeof(Shed), 8) +
-                    (uint32_t)ALIGN_SIZE((sizeof(Task) * max_task_count), 8) +
-                    (uint32_t)ALIGN_SIZE((sizeof(Dependency) * max_dependency_count), 8) +
-                    (uint32_t)ALIGN_SIZE((sizeof(ReadyTask) * (max_task_count + 1)), 8) +
-                    (uint32_t)ALIGN_SIZE((sizeof(TTaskID) * max_task_count), 8) +
-                    (uint32_t)ALIGN_SIZE((sizeof(TDependencyIndex) * max_dependency_count), 8) +
-                    (uint32_t)ALIGN_SIZE((sizeof(TReadyIndex) * max_task_count), 8);
-    return size;
-}
-
-HShed CreateShed(void* mem, uint16_t max_task_count, uint16_t max_dependency_count, SyncPrimitive* sync_primitive)
-{
-    HShed shed = (HShed)mem;
-    shed->m_FreeTaskCount = max_task_count;
-    shed->m_FreeDependencyCount = max_dependency_count;
-    shed->m_FreeReadyCount = max_task_count;
-    shed->m_LastReadyIndex = 0;
-    uint8_t* p = (uint8_t*)mem;
-    p += ALIGN_SIZE(sizeof(Shed), 8);
-    shed->m_Tasks = (Task*)((void*)p);
-    p += ALIGN_SIZE((sizeof(Task) * max_task_count), 8);
-    shed->m_Dependencies = (Dependency*)((void*)p);
-    p += ALIGN_SIZE((sizeof(Dependency) * max_dependency_count), 8);
-    shed->m_ReadyTasks = (ReadyTask*)((void*)p);
-    p += ALIGN_SIZE((sizeof(ReadyTask) * (max_task_count + 1)), 8);
-    shed->m_FreeTaskIndexes = (TTaskID*)((void*)p);
-    p += ALIGN_SIZE((sizeof(TTaskID) * max_task_count), 8);
-    shed->m_FreeDependencyIndexes = (TDependencyIndex*)((void*)p);
-    p += ALIGN_SIZE((sizeof(TDependencyIndex) * max_dependency_count), 8);
-    shed->m_FreeReadyTaskIndexes = (TReadyIndex*)((void*)p);
-    p += ALIGN_SIZE((sizeof(TReadyIndex) * max_task_count), 8);
-    shed->m_SyncPrimitive = sync_primitive;
-
-    shed->m_ReadyTasks[0].m_NextReadyTaskIndex = 0;
-
-    for (uint16_t i = 0; i < max_task_count; ++i)
-    {
-        uint16_t free_index = max_task_count - i;
-        shed->m_Tasks[i].m_TaskFunc = 0;
-        shed->m_FreeTaskIndexes[i] = free_index;
-        shed->m_FreeDependencyIndexes[i] = free_index;
-        shed->m_FreeReadyTaskIndexes[i] = free_index;
-    }
-
-    for (uint16_t i = 0; i < max_dependency_count; ++i)
-    {
-        uint16_t free_index = max_dependency_count - i;
-        shed->m_FreeDependencyIndexes[i] = free_index;
-    }
-
-    return shed;
-}
-
 #if defined(ENABLE_VALIDATE_STATE)
 static bool ValidateState(HShed shed)
 {
@@ -218,6 +163,131 @@ static bool ValidateState(HShed shed)
 }
 #endif
 
+static void SyncedFreeTask(HShed shed, TTaskID task_id)
+{
+    Task* task = &shed->m_Tasks[task_id - 1];
+    task->m_TaskFunc = 0;
+    shed->m_FreeTaskIndexes[shed->m_FreeTaskCount++] = task_id;
+    TDependencyIndex dependency_index = task->m_FirstParentDependencyIndex;
+    while (dependency_index != 0)
+    {
+        Dependency* dependency = &shed->m_Dependencies[dependency_index - 1];
+        shed->m_FreeDependencyIndexes[shed->m_FreeDependencyCount++] = dependency_index;
+        dependency_index = dependency->m_NextParentDependencyIndex;
+    }
+}
+
+static void SyncedReadyTask(HShed shed, TTaskID task_id)
+{
+    TReadyIndex ready_index = shed->m_FreeReadyTaskIndexes[--shed->m_FreeReadyCount];
+    ReadyTask* ready_task = &shed->m_ReadyTasks[ready_index];
+    ready_task->m_TaskID = task_id;
+    ready_task->m_NextReadyTaskIndex = 0;
+    shed->m_ReadyTasks[shed->m_LastReadyIndex].m_NextReadyTaskIndex = ready_index;
+    shed->m_LastReadyIndex = ready_index;
+}
+
+static void SyncedResolveTask(HShed shed, TTaskID task_id, ResolvedCallback* resolves_callback)
+{
+    Task* task = &shed->m_Tasks[task_id - 1];
+    task->m_TaskFunc = 0;
+    TDependencyIndex dependency_index = task->m_FirstParentDependencyIndex;
+
+    while (dependency_index != 0)
+    {
+        Dependency* dependency = &shed->m_Dependencies[dependency_index - 1];
+        TTaskID parent_task_id = dependency->m_ParentTaskID;
+        Task* parent_task = &shed->m_Tasks[parent_task_id - 1];
+        if (parent_task->m_ChildDependencyCount-- == 1)
+        {
+            if (resolves_callback && resolves_callback->ConsumeTask(resolves_callback, parent_task_id))
+            {
+                // Consumed by caller
+            }
+            else
+            {
+               SyncedReadyTask(shed, parent_task_id);
+            }           
+        }
+        dependency_index = dependency->m_NextParentDependencyIndex;
+    }
+}
+
+static bool SyncGetFirstReadyTask(HShed shed, TTaskID* out_task_id)
+{
+    TReadyIndex* first_ready_index_ptr = &shed->m_ReadyTasks[0].m_NextReadyTaskIndex;
+    if (*first_ready_index_ptr == 0)
+    {
+        return false;
+    }
+    ReadyTask* ready_task = &shed->m_ReadyTasks[*first_ready_index_ptr];
+    shed->m_FreeReadyTaskIndexes[shed->m_FreeReadyCount++] = *first_ready_index_ptr;
+
+    *first_ready_index_ptr = ready_task->m_NextReadyTaskIndex;
+    *out_task_id = ready_task->m_TaskID;
+    if (*first_ready_index_ptr == 0)
+    {
+        shed->m_LastReadyIndex = 0;
+    }
+
+    return true;
+}
+
+uint32_t GetShedSize(uint16_t max_task_count, uint16_t max_dependency_count)
+{
+    uint32_t size = (uint32_t)ALIGN_SIZE(sizeof(Shed), 8) +
+        (uint32_t)ALIGN_SIZE((sizeof(Task) * max_task_count), 8) +
+        (uint32_t)ALIGN_SIZE((sizeof(Dependency) * max_dependency_count), 8) +
+        (uint32_t)ALIGN_SIZE((sizeof(ReadyTask) * (max_task_count + 1)), 8) +
+        (uint32_t)ALIGN_SIZE((sizeof(TTaskID) * max_task_count), 8) +
+        (uint32_t)ALIGN_SIZE((sizeof(TDependencyIndex) * max_dependency_count), 8) +
+        (uint32_t)ALIGN_SIZE((sizeof(TReadyIndex) * max_task_count), 8);
+    return size;
+}
+
+HShed CreateShed(void* mem, uint16_t max_task_count, uint16_t max_dependency_count, SyncPrimitive* sync_primitive)
+{
+    HShed shed = (HShed)mem;
+    shed->m_FreeTaskCount = max_task_count;
+    shed->m_FreeDependencyCount = max_dependency_count;
+    shed->m_FreeReadyCount = max_task_count;
+    shed->m_LastReadyIndex = 0;
+    uint8_t* p = (uint8_t*)mem;
+    p += ALIGN_SIZE(sizeof(Shed), 8);
+    shed->m_Tasks = (Task*)((void*)p);
+    p += ALIGN_SIZE((sizeof(Task) * max_task_count), 8);
+    shed->m_Dependencies = (Dependency*)((void*)p);
+    p += ALIGN_SIZE((sizeof(Dependency) * max_dependency_count), 8);
+    shed->m_ReadyTasks = (ReadyTask*)((void*)p);
+    p += ALIGN_SIZE((sizeof(ReadyTask) * (max_task_count + 1)), 8);
+    shed->m_FreeTaskIndexes = (TTaskID*)((void*)p);
+    p += ALIGN_SIZE((sizeof(TTaskID) * max_task_count), 8);
+    shed->m_FreeDependencyIndexes = (TDependencyIndex*)((void*)p);
+    p += ALIGN_SIZE((sizeof(TDependencyIndex) * max_dependency_count), 8);
+    shed->m_FreeReadyTaskIndexes = (TReadyIndex*)((void*)p);
+    p += ALIGN_SIZE((sizeof(TReadyIndex) * max_task_count), 8);
+    shed->m_SyncPrimitive = sync_primitive;
+
+    shed->m_ReadyTasks[0].m_NextReadyTaskIndex = 0;
+
+    for (uint16_t i = 0; i < max_task_count; ++i)
+    {
+        uint16_t free_index = max_task_count - i;
+        shed->m_Tasks[i].m_TaskFunc = 0;
+        shed->m_FreeTaskIndexes[i] = free_index;
+        shed->m_FreeDependencyIndexes[i] = free_index;
+        shed->m_FreeReadyTaskIndexes[i] = free_index;
+    }
+
+    for (uint16_t i = 0; i < max_dependency_count; ++i)
+    {
+        uint16_t free_index = max_dependency_count - i;
+        shed->m_FreeDependencyIndexes[i] = free_index;
+    }
+
+    return shed;
+}
+
 bool CreateTasks(HShed shed, uint16_t task_count, TaskFunc* task_functions, void** task_context_data, TTaskID* out_task_ids)
 {
     if (shed->m_SyncPrimitive && !shed->m_SyncPrimitive->AcquireLock(shed->m_SyncPrimitive))
@@ -261,16 +331,7 @@ void FreeTasks(HShed shed, uint16_t task_count, const TTaskID* task_ids)
     for (uint16_t i = 0; i < task_count; ++i)
     {
         TTaskID task_id = task_ids[i];
-        Task* task = &shed->m_Tasks[task_id - 1];
-        task->m_TaskFunc = 0;
-        shed->m_FreeTaskIndexes[shed->m_FreeTaskCount++] = task_id;
-        TDependencyIndex dependency_index = task->m_FirstParentDependencyIndex;
-        while (dependency_index != 0)
-        {
-            Dependency* dependency = &shed->m_Dependencies[dependency_index - 1];
-            shed->m_FreeDependencyIndexes[shed->m_FreeDependencyCount++] = dependency_index;
-            dependency_index = dependency->m_NextParentDependencyIndex;
-        }
+        SyncedFreeTask(shed, task_id);
     }
     VALIDATE_STATE(shed)
     if (shed->m_SyncPrimitive)
@@ -353,12 +414,7 @@ bool ReadyTasks(HShed shed, uint16_t task_count, const TTaskID* task_ids)
     for (uint16_t i = 0; i < task_count; ++i)
     {
         TTaskID task_id = task_ids[i];
-        TReadyIndex ready_index = shed->m_FreeReadyTaskIndexes[--shed->m_FreeReadyCount];
-        ReadyTask* ready_task = &shed->m_ReadyTasks[ready_index];
-        ready_task->m_TaskID = task_id;
-        ready_task->m_NextReadyTaskIndex = 0;
-        shed->m_ReadyTasks[shed->m_LastReadyIndex].m_NextReadyTaskIndex = ready_index;
-        shed->m_LastReadyIndex = ready_index;
+        SyncedReadyTask(shed, task_id);
     }
 
     VALIDATE_STATE(shed)
@@ -370,30 +426,32 @@ bool ReadyTasks(HShed shed, uint16_t task_count, const TTaskID* task_ids)
     return true;
 }
 
-void ResolveTask(HShed shed, TTaskID task_id, uint16_t* resolved_task_count, TTaskID* out_resolved_tasks)
+void ExecuteAndResolveTask(HShed shed, TTaskID task_id, ResolvedCallback* resolves_callback)
 {
+    Task* task = &shed->m_Tasks[task_id - 1];
+
+//    printf("\nExecuting task %d\n", (int)task_id);
+    TaskResult task_result = task->m_TaskFunc(shed, task_id, task->m_TaskContextData);
+
+    if (task_result == TASK_RESULT_BLOCKED)
+    {
+        return;
+    }
+
     if (shed->m_SyncPrimitive && !shed->m_SyncPrimitive->AcquireLock(shed->m_SyncPrimitive))
     {
         return;
     }
-    VALIDATE_STATE(shed)
-    uint16_t resolved_count = 0;
-    Task* task = &shed->m_Tasks[task_id - 1];
-    task->m_TaskFunc = 0;
-    TDependencyIndex dependency_index = task->m_FirstParentDependencyIndex;
 
-    while (dependency_index != 0)
+    if (task_result == TASK_RESULT_COMPLETE)
     {
-        Dependency* dependency = &shed->m_Dependencies[dependency_index - 1];
-        Task* parent_task = &shed->m_Tasks[dependency->m_ParentTaskID - 1];
-        if (parent_task->m_ChildDependencyCount-- == 1)
-        {
-            out_resolved_tasks[resolved_count++] = dependency->m_ParentTaskID;
-        }
-        dependency_index = dependency->m_NextParentDependencyIndex;
+        SyncedResolveTask(shed, task_id, resolves_callback);
+        SyncedFreeTask(shed, task_id);
     }
-    *resolved_task_count = resolved_count;
-
+    else if (task_result == TASK_RESULT_YIELD)
+    {
+        SyncedReadyTask(shed, task_id);
+    }
     VALIDATE_STATE(shed)
     if (shed->m_SyncPrimitive)
     {
@@ -401,47 +459,30 @@ void ResolveTask(HShed shed, TTaskID task_id, uint16_t* resolved_task_count, TTa
     }
 }
 
-bool GetFirstReadyTask(HShed shed, TTaskID* out_task_id)
+bool ExecuteOneTask(HShed shed, ResolvedCallback* resolves_callback, TTaskID* executed_task_id)
 {
     if (shed->m_SyncPrimitive && !shed->m_SyncPrimitive->AcquireLock(shed->m_SyncPrimitive))
     {
         return false;
     }
     VALIDATE_STATE(shed)
-    TReadyIndex* first_ready_index_ptr = &shed->m_ReadyTasks[0].m_NextReadyTaskIndex;
-    if (*first_ready_index_ptr == 0)
-    {
-        if (shed->m_SyncPrimitive)
-        {
-            shed->m_SyncPrimitive->ReleaseLock(shed->m_SyncPrimitive);
-        }
-        return false;
-    }
-
-    ReadyTask* ready_task = &shed->m_ReadyTasks[*first_ready_index_ptr];
-    shed->m_FreeReadyTaskIndexes[shed->m_FreeReadyCount++] = *first_ready_index_ptr;
-
-    *first_ready_index_ptr = ready_task->m_NextReadyTaskIndex;
-    *out_task_id = ready_task->m_TaskID;
-    if (*first_ready_index_ptr == 0)
-    {
-        shed->m_LastReadyIndex = 0;
-    }
-
-    VALIDATE_STATE(shed)
+    TTaskID task_id;
+    bool has_task = SyncGetFirstReadyTask(shed, &task_id);
     if (shed->m_SyncPrimitive)
     {
         shed->m_SyncPrimitive->ReleaseLock(shed->m_SyncPrimitive);
     }
-    return true;
-}
+    if (!has_task)
+    {
+        return false;
+    }
 
-TaskResult ExecuteTask(HShed shed, TTaskID task_id)
-{
-    Task* task = &shed->m_Tasks[task_id - 1];
-
-    TaskResult result = task->m_TaskFunc(shed, task_id, task->m_TaskContextData);
-    return result;
+    ExecuteAndResolveTask(shed, task_id, resolves_callback);
+    if (executed_task_id != 0)
+    {
+        *executed_task_id = task_id;
+    }
+    return has_task;
 }
 
 }
