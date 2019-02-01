@@ -1,6 +1,6 @@
 #include "bikeshed.h"
 
-
+#define ALIGN_SIZE(x, align)    (((x) + ((align) - 1)) & ~((align) - 1))
 
 #if defined(ENABLE_VALIDATE_STATE)
     #include <assert.h>
@@ -58,13 +58,13 @@ struct Shed
 
 uint32_t GetShedSize(uint16_t max_task_count, uint16_t max_dependency_count)
 {
-    uint32_t size = (uint32_t)sizeof(Shed) +
-                    (uint32_t)(sizeof(Task) * max_task_count) +
-                    (uint32_t)(sizeof(Dependency) * max_dependency_count) +
-                    (uint32_t)(sizeof(ReadyTask) * (max_task_count + 1)) +
-                    (uint32_t)(sizeof(TTaskID) * max_task_count) +
-                    (uint32_t)(sizeof(TDependencyIndex) * max_dependency_count) +
-                    (uint32_t)(sizeof(TReadyIndex) * max_task_count);
+    uint32_t size = (uint32_t)ALIGN_SIZE(sizeof(Shed), 8) +
+                    (uint32_t)ALIGN_SIZE((sizeof(Task) * max_task_count), 8) +
+                    (uint32_t)ALIGN_SIZE((sizeof(Dependency) * max_dependency_count), 8) +
+                    (uint32_t)ALIGN_SIZE((sizeof(ReadyTask) * (max_task_count + 1)), 8) +
+                    (uint32_t)ALIGN_SIZE((sizeof(TTaskID) * max_task_count), 8) +
+                    (uint32_t)ALIGN_SIZE((sizeof(TDependencyIndex) * max_dependency_count), 8) +
+                    (uint32_t)ALIGN_SIZE((sizeof(TReadyIndex) * max_task_count), 8);
     return size;
 }
 
@@ -76,19 +76,19 @@ HShed CreateShed(void* mem, uint16_t max_task_count, uint16_t max_dependency_cou
     shed->m_FreeReadyCount = max_task_count;
     shed->m_LastReadyIndex = 0;
     uint8_t* p = (uint8_t*)mem;
-    p += sizeof(Shed);
+    p += ALIGN_SIZE(sizeof(Shed), 8);
     shed->m_Tasks = (Task*)((void*)p);
-    p += (sizeof(Task) * max_task_count);
+    p += ALIGN_SIZE((sizeof(Task) * max_task_count), 8);
     shed->m_Dependencies = (Dependency*)((void*)p);
-    p += (sizeof(Dependency) * max_dependency_count);
+    p += ALIGN_SIZE((sizeof(Dependency) * max_dependency_count), 8);
     shed->m_ReadyTasks = (ReadyTask*)((void*)p);
-    p += (sizeof(ReadyTask) * (max_task_count + 1));
+    p += ALIGN_SIZE((sizeof(ReadyTask) * (max_task_count + 1)), 8);
     shed->m_FreeTaskIndexes = (TTaskID*)((void*)p);
-    p += (sizeof(TTaskID) * max_task_count);
+    p += ALIGN_SIZE((sizeof(TTaskID) * max_task_count), 8);
     shed->m_FreeDependencyIndexes = (TDependencyIndex*)((void*)p);
-    p += (sizeof(TDependencyIndex) * max_dependency_count);
+    p += ALIGN_SIZE((sizeof(TDependencyIndex) * max_dependency_count), 8);
     shed->m_FreeReadyTaskIndexes = (TReadyIndex*)((void*)p);
-    p += (sizeof(TReadyIndex) * max_task_count);
+    p += ALIGN_SIZE((sizeof(TReadyIndex) * max_task_count), 8);
     shed->m_SyncPrimitive = sync_primitive;
 
     for (uint16_t i = 0; i < max_task_count; ++i)
