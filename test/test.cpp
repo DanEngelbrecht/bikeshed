@@ -368,14 +368,8 @@ struct NodeWorker
     static int32_t Execute(void* context)
     {
         NodeWorker* _this = (NodeWorker*)context;
-        while(true)
+        while(*_this->stop == 0)
         {
-            if (nadir::AtomicAdd32(_this->stop, -1) >= 0)
-            {
-                break;
-            }
-            nadir::AtomicAdd32(_this->stop, 1);
-
             if (!ExecuteAndResolveOneTask(_this->shed))
             {
                 nadir::SleepConditionVariable(_this->condition_variable, nadir::TIMEOUT_INFINITE);
@@ -481,6 +475,7 @@ static void test_worker_thread(SCtx* )
     ASSERT_TRUE(bikeshed::ReadyTasks(shed, 1, &task_id));
 
     nadir::JoinThread(thread_context.thread, nadir::TIMEOUT_INFINITE);
+    thread_context.DisposeThread();
 
     ASSERT_EQ(shed, task.shed);
     ASSERT_EQ(task_id, task.task_id);
@@ -529,6 +524,7 @@ static void test_dependencies_thread(SCtx* )
 	ASSERT_TRUE(bikeshed::ReadyTasks(shed, 1, &task_ids[4]));
 
     nadir::JoinThread(thread_context.thread, nadir::TIMEOUT_INFINITE);
+    thread_context.DisposeThread();
 
     for (uint32_t i = 0; i < 5; ++i)
     {
@@ -629,6 +625,11 @@ static void test_dependencies_threads(SCtx* )
             // a thread is not woken up
             nadir::WakeAll(sync_primitive.m_ConditionVariable);
         }
+    }
+
+    for (uint16_t worker_index = 0; worker_index < 7; ++worker_index)
+    {
+        workers[worker_index].DisposeThread();
     }
 
     for (uint32_t i = 0; i < TASK_COUNT; ++i)
