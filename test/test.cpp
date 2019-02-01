@@ -60,6 +60,9 @@ static void single_task(SCtx* )
         uint32_t executed;
     } task;
 
+    bikeshed::TTaskID ready_task;
+    ASSERT_TRUE(!bikeshed::GetFirstReadyTask(shed, &ready_task));
+
     bikeshed::TaskFunc funcs[1] = {(bikeshed::TaskFunc)TaskData::Compute};
     void* contexts[1] = {&task};
 
@@ -70,7 +73,6 @@ static void single_task(SCtx* )
 
     ASSERT_TRUE(bikeshed::ReadyTasks(shed, 1, &task_id));
 
-    bikeshed::TTaskID ready_task;
     ASSERT_TRUE(bikeshed::GetFirstReadyTask(shed, &ready_task));
     ASSERT_EQ(task_id, ready_task);
     bikeshed::TaskResult result = bikeshed::ExecuteTask(shed, ready_task);

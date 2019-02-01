@@ -91,6 +91,8 @@ HShed CreateShed(void* mem, uint16_t max_task_count, uint16_t max_dependency_cou
     p += ALIGN_SIZE((sizeof(TReadyIndex) * max_task_count), 8);
     shed->m_SyncPrimitive = sync_primitive;
 
+    shed->m_ReadyTasks[0].m_NextReadyTaskIndex = 0;
+
     for (uint16_t i = 0; i < max_task_count; ++i)
     {
         uint16_t free_index = max_task_count - i;
@@ -421,7 +423,7 @@ bool GetFirstReadyTask(HShed shed, TTaskID* out_task_id)
 
     *first_ready_index_ptr = ready_task->m_NextReadyTaskIndex;
     *out_task_id = ready_task->m_TaskID;
-    if (ready_task->m_NextReadyTaskIndex == 0)
+    if (*first_ready_index_ptr == 0)
     {
         shed->m_LastReadyIndex = 0;
     }
