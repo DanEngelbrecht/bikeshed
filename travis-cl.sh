@@ -2,9 +2,7 @@
 
 set +e
 
-"$PROGRAMFILES\(X86\)$\Microsoft Visual Studio 17.0\VC\vcvarsall.bat" amd64
-
-sh ./compile_clang_debug.sh
+./compile_cl_debug.bat
 ./build/test_debug.exe
-sh ./compile_clang.sh
+./compile_cl.bat
 ./build/test.exe

@@ -1,7 +1,10 @@
 @echo off
 
+call .\find_mvsc.bat
+
 if NOT DEFINED VCINSTALLDIR (
-    echo "No compatible visual studio found! run vcvarsall.bat first!"
+    echo "No Visual Studio installation found, aborting, try running run vcvarsall.bat first!"
+    exit 1
 )
 
 IF NOT EXIST build (
@@ -10,7 +13,7 @@ IF NOT EXIST build (
 
 pushd build
 
-cl.exe /nologo /Zi /D_CRT_SECURE_NO_WARNINGS /D_HAS_EXCEPTIONS=0 /EHsc /W4 ..\src\bikeshed.cpp ..\test/main.cpp /link  /out:test_debug.exe /pdb:test_debug.pdb
+cl.exe /nologo /Zi /D_CRT_SECURE_NO_WARNINGS /D_HAS_EXCEPTIONS=0 /EHsc /W4 ..\src\bikeshed.cpp ..\third-party\nadir\src\nadir.cpp ..\test/main.cpp /link  /out:test_debug.exe /pdb:test_debug.pdb
 
 popd
 

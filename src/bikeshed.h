@@ -25,8 +25,8 @@ enum TaskResult
 
 typedef TaskResult (*TaskFunc)(HShed shed, TTaskID task_id, void* context_data);
 
-uint32_t GetShedSize(uint16_t max_task_count);
-HShed CreateShed(void* mem, uint16_t max_task_count, SyncPrimitive* sync_primitive);
+uint32_t GetShedSize(uint16_t max_task_count, uint16_t max_dependency_count);
+HShed CreateShed(void* mem, uint16_t max_task_count, uint16_t max_dependency_count, SyncPrimitive* sync_primitive);
 
 bool CreateTasks(HShed shed, uint16_t task_count, TaskFunc* task_functions, void** task_context_data, TTaskID* out_task_ids);
 void FreeTasks(HShed shed, uint16_t task_count, const TTaskID* task_ids);
