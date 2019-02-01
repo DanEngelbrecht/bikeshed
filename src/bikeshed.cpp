@@ -77,17 +77,17 @@ HShed CreateShed(void* mem, uint16_t max_task_count, uint16_t max_dependency_cou
     shed->m_LastReadyIndex = 0;
     uint8_t* p = (uint8_t*)mem;
     p += sizeof(Shed);
-    shed->m_Tasks = (Task*)p;
+    shed->m_Tasks = (Task*)((void*)p);
     p += (sizeof(Task) * max_task_count);
-    shed->m_Dependencies = (Dependency*)p;
+    shed->m_Dependencies = (Dependency*)((void*)p);
     p += (sizeof(Dependency) * max_dependency_count);
-    shed->m_ReadyTasks = (ReadyTask*)p;
+    shed->m_ReadyTasks = (ReadyTask*)((void*)p);
     p += (sizeof(ReadyTask) * (max_task_count + 1));
-    shed->m_FreeTaskIndexes = (TTaskID*)p;
+    shed->m_FreeTaskIndexes = (TTaskID*)((void*)p);
     p += (sizeof(TTaskID) * max_task_count);
-    shed->m_FreeDependencyIndexes = (TDependencyIndex*)p;
+    shed->m_FreeDependencyIndexes = (TDependencyIndex*)((void*)p);
     p += (sizeof(TDependencyIndex) * max_dependency_count);
-    shed->m_FreeReadyTaskIndexes = (TReadyIndex*)p;
+    shed->m_FreeReadyTaskIndexes = (TReadyIndex*)((void*)p);
     p += (sizeof(TReadyIndex) * max_task_count);
     shed->m_SyncPrimitive = sync_primitive;
 

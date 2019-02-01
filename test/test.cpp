@@ -44,8 +44,8 @@ static void single_task(SCtx* )
 
     struct TaskData {
         TaskData()
-            : task_id((bikeshed::TTaskID)-1)
-            , shed(0)
+            : shed(0)
+            , task_id((bikeshed::TTaskID)-1)
             , executed(0)
         { }
         static bikeshed::TaskResult Compute(bikeshed::HShed shed, bikeshed::TTaskID task_id, TaskData* task_data)
@@ -118,8 +118,8 @@ static void test_sync(SCtx* )
 
     struct TaskData {
         TaskData()
-            : task_id((bikeshed::TTaskID)-1)
-            , shed(0)
+            : shed(0)
+            , task_id((bikeshed::TTaskID)-1)
             , executed(0)
         { }
         static bikeshed::TaskResult Compute(bikeshed::HShed shed, bikeshed::TTaskID task_id, TaskData* task_data)
@@ -171,8 +171,8 @@ static void test_ready_order(SCtx* )
 
     struct TaskData {
         TaskData()
-            : task_id((bikeshed::TTaskID)-1)
-            , shed(0)
+            : shed(0)
+            , task_id((bikeshed::TTaskID)-1)
             , executed(0)
         { }
         static bikeshed::TaskResult Compute(bikeshed::HShed shed, bikeshed::TTaskID task_id, TaskData* task_data)
@@ -232,8 +232,8 @@ static void test_dependency(SCtx* )
 
     struct TaskData {
         TaskData()
-            : task_id((bikeshed::TTaskID)-1)
-            , shed(0)
+            : shed(0)
+            , task_id((bikeshed::TTaskID)-1)
             , executed(0)
         { }
         static bikeshed::TaskResult Compute(bikeshed::HShed shed, bikeshed::TTaskID task_id, TaskData* task_data)
@@ -340,8 +340,8 @@ static bool ExecuteAndResolveOneTask(bikeshed::HShed shed)
 struct NodeWorker
 {
     NodeWorker()
-        : shed(0)
-        , stop(0)
+        : stop(0)
+        , shed(0)
         , condition_variable(0)
         , thread(0)
     {}
@@ -434,8 +434,8 @@ struct NadirLock
 struct TaskData {
     TaskData()
         : done(0)
-        , task_id((bikeshed::TTaskID)-1)
         , shed(0)
+        , task_id((bikeshed::TTaskID)-1)
         , executed(0)
     { }
     static bikeshed::TaskResult Compute(bikeshed::HShed shed, bikeshed::TTaskID task_id, void* context_data)
