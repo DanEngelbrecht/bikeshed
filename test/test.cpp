@@ -37,8 +37,46 @@ static void create(SCtx* )
     free(shed);
 }
 
+static uint32_t gAssertCount = 0;
+
+static void Assert(const char* , int )
+{
+    ++gAssertCount;
+}
+
+static void test_assert(SCtx* )
+{
+    bikeshed::SetAssert(Assert);
+    bikeshed::HShed shed = bikeshed::CreateShed(malloc(bikeshed::GetShedSize(1, 1)), 1, 1, 0);
+    ASSERT_NE(0, shed);
+    bikeshed::TTaskID invalid_task_id = 277;
+    bikeshed::ReadyTasks(shed, 1, &invalid_task_id);
+    ASSERT_EQ(1, gAssertCount);
+    free(shed);
+    bikeshed::SetAssert(0);
+}
+
+struct AssertAbort
+{
+    AssertAbort()
+    {
+        bikeshed::SetAssert(AssertAbort::Assert);
+    }
+    ~AssertAbort()
+    {
+        bikeshed::SetAssert(0);
+    }
+    static void Assert(const char* file, int line)
+    {
+        printf("Assert at %s(%d)", file, line);
+        ASSERT_TRUE(false);
+    }
+};
+
 static void single_task(SCtx* )
 {
+    AssertAbort fatal;
+
     bikeshed::HShed shed = bikeshed::CreateShed(malloc(bikeshed::GetShedSize(1, 1)), 1, 1, 0);
     ASSERT_NE(0, shed);
 
@@ -87,6 +125,8 @@ static void single_task(SCtx* )
 
 static void test_sync(SCtx* )
 {
+    AssertAbort fatal;
+
     struct FakeLock
     {
         bikeshed::SyncPrimitive m_SyncPrimitive;
@@ -162,6 +202,8 @@ static void test_sync(SCtx* )
 
 static void test_ready_order(SCtx* )
 {
+    AssertAbort fatal;
+
     bikeshed::HShed shed = bikeshed::CreateShed(malloc(bikeshed::GetShedSize(5, 5)), 5, 5, 0);
     ASSERT_NE(0, shed);
 
@@ -217,6 +259,8 @@ static void test_ready_order(SCtx* )
 
 static void test_dependency(SCtx* )
 {
+    AssertAbort fatal;
+
     bikeshed::HShed shed = bikeshed::CreateShed(malloc(bikeshed::GetShedSize(5, 5)), 5, 5, 0);
     ASSERT_NE(0, shed);
 
@@ -460,6 +504,8 @@ struct TaskData {
 
 static void test_worker_thread(SCtx* )
 {
+    AssertAbort fatal;
+
     NadirLock sync_primitive;
 
     nadir::TAtomic32 stop = 0;
@@ -486,7 +532,6 @@ static void test_worker_thread(SCtx* )
     ASSERT_EQ(task_id, task.task_id);
     ASSERT_EQ(1, task.executed);
 
-    bikeshed::FreeTasks(shed, 1, &task_id);
     ASSERT_TRUE(!bikeshed::ExecuteOneTask(shed, 0, 0));
 
     free(shed);
@@ -494,6 +539,8 @@ static void test_worker_thread(SCtx* )
 
 static void test_dependencies_thread(SCtx* )
 {
+    AssertAbort fatal;
+
     NadirLock sync_primitive;
 
     nadir::TAtomic32 stop = 0;
@@ -537,7 +584,6 @@ static void test_dependencies_thread(SCtx* )
         ASSERT_EQ(1, tasks[i].executed);
     }
 
-    bikeshed::FreeTasks(shed, 5, task_ids);
     ASSERT_TRUE(!bikeshed::ExecuteOneTask(shed, 0, 0));
 
     free(shed);
@@ -545,6 +591,8 @@ static void test_dependencies_thread(SCtx* )
 
 static void test_dependencies_threads(SCtx* )
 {
+    AssertAbort fatal;
+
     NadirLock sync_primitive;
 
     static const uint16_t LAYER_COUNT = 4;
@@ -642,7 +690,6 @@ static void test_dependencies_threads(SCtx* )
         ASSERT_EQ(1, tasks[i].executed);
     }
 
-    bikeshed::FreeTasks(shed, TASK_COUNT, task_ids);
     ASSERT_TRUE(!bikeshed::ExecuteOneTask(shed, 0, 0));
 
     free(shed);
@@ -650,6 +697,7 @@ static void test_dependencies_threads(SCtx* )
 
 TEST_BEGIN(test, main_setup, main_teardown, test_setup, test_teardown)
     TEST(create)
+    TEST(test_assert)
     TEST(single_task)
     TEST(test_sync)
     TEST(test_ready_order)

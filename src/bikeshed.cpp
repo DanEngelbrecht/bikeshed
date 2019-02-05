@@ -2,6 +2,14 @@
 
 #define ALIGN_SIZE(x, align)    (((x) + ((align) - 1)) & ~((align) - 1))
 
+#if defined(BIKESHED_ASSERTS)
+    #define BIKESHED_FATAL_ASSERT(x, y) if (gAssert && !(x)) {gAssert(__FILE__, __LINE__); goto y;}
+    #define BIKESHED_ASSERT_EXIT(l) l:
+#else // defined(BIKESHED_ASSERTS)
+    #define BIKESHED_FATAL_ASSERT(x, y)
+    #define BIKESHED_ASSERT_EXIT(l)
+#endif // defined(BIKESHED_ASSERTS)
+
 #if defined(ENABLE_VALIDATE_STATE)
     #include <assert.h>
     #ifdef _WIN32
@@ -18,18 +26,33 @@
 namespace bikeshed
 {
 
+#if defined(BIKESHED_ASSERTS)
+static Assert gAssert = 0;
+#endif // defined(BIKESHED_ASSERTS)
+
+void SetAssert(Assert assert_func)
+{
+#if defined(BIKESHED_ASSERTS)
+    gAssert = assert_func;
+#else // defined(BIKESHED_ASSERTS)
+    assert_func = 0;
+#endif // defined(BIKESHED_ASSERTS)
+}
+
+typedef uint16_t TTaskIndex;
 typedef uint16_t TDependencyIndex;
 typedef uint16_t TReadyIndex;
 
 struct Dependency
 {
-    TTaskID m_ParentTaskID;
+    TTaskIndex m_ParentTaskIndex;
     TDependencyIndex m_NextParentDependencyIndex;
 };
 
 struct Task
 {
-    uint32_t m_ChildDependencyCount;
+    uint16_t m_Generation;
+    uint16_t m_ChildDependencyCount;
     TDependencyIndex m_FirstParentDependencyIndex;
     TaskFunc m_TaskFunc;
     void* m_TaskContextData;
@@ -37,12 +60,13 @@ struct Task
 
 struct ReadyTask
 {
-    TTaskID m_TaskID;
+    TTaskIndex m_TaskIndex;
     TReadyIndex m_NextReadyTaskIndex;
 };
 
 struct Shed
 {
+    uint16_t            m_Generation;
     uint16_t            m_FreeTaskCount;
     uint16_t            m_FreeDependencyCount;
     uint16_t            m_FreeReadyCount;
@@ -50,7 +74,7 @@ struct Shed
     Task*               m_Tasks;
     Dependency*         m_Dependencies;
     ReadyTask*          m_ReadyTasks;
-    TTaskID*            m_FreeTaskIndexes;
+    TTaskIndex*         m_FreeTaskIndexes;
     TDependencyIndex*   m_FreeDependencyIndexes;
     TReadyIndex*        m_FreeReadyTaskIndexes;
     SyncPrimitive*      m_SyncPrimitive;
@@ -165,9 +189,12 @@ static bool ValidateState(HShed shed)
 
 static void SyncedFreeTask(HShed shed, TTaskID task_id)
 {
-    Task* task = &shed->m_Tasks[task_id - 1];
+    TTaskIndex task_index = (TTaskID)(task_id & 0xffff);
+    Task* task = &shed->m_Tasks[task_index - 1];
+    BIKESHED_FATAL_ASSERT((task_id >> 16) == task->m_Generation, bail);
+    --task->m_Generation;
     task->m_TaskFunc = 0;
-    shed->m_FreeTaskIndexes[shed->m_FreeTaskCount++] = task_id;
+    shed->m_FreeTaskIndexes[shed->m_FreeTaskCount++] = task_index;
     TDependencyIndex dependency_index = task->m_FirstParentDependencyIndex;
     while (dependency_index != 0)
     {
@@ -175,29 +202,38 @@ static void SyncedFreeTask(HShed shed, TTaskID task_id)
         shed->m_FreeDependencyIndexes[shed->m_FreeDependencyCount++] = dependency_index;
         dependency_index = dependency->m_NextParentDependencyIndex;
     }
+BIKESHED_ASSERT_EXIT(bail)
+    return;
 }
 
 static void SyncedReadyTask(HShed shed, TTaskID task_id)
 {
+    TTaskIndex task_index = (TTaskID)(task_id & 0xffff);
+    BIKESHED_FATAL_ASSERT((task_id >> 16) == shed->m_Tasks[task_index - 1].m_Generation, bail);
     TReadyIndex ready_index = shed->m_FreeReadyTaskIndexes[--shed->m_FreeReadyCount];
     ReadyTask* ready_task = &shed->m_ReadyTasks[ready_index];
-    ready_task->m_TaskID = task_id;
+    ready_task->m_TaskIndex = task_index;
     ready_task->m_NextReadyTaskIndex = 0;
     shed->m_ReadyTasks[shed->m_LastReadyIndex].m_NextReadyTaskIndex = ready_index;
     shed->m_LastReadyIndex = ready_index;
+BIKESHED_ASSERT_EXIT(bail)
+    return;
 }
 
 static void SyncedResolveTask(HShed shed, TTaskID task_id, ResolvedCallback* resolves_callback)
 {
-    Task* task = &shed->m_Tasks[task_id - 1];
+    TTaskIndex task_index = (TTaskID)(task_id & 0xffff);
+    Task* task = &shed->m_Tasks[task_index - 1];
+    BIKESHED_FATAL_ASSERT((task_id >> 16) == task->m_Generation, bail);
     task->m_TaskFunc = 0;
     TDependencyIndex dependency_index = task->m_FirstParentDependencyIndex;
 
     while (dependency_index != 0)
     {
         Dependency* dependency = &shed->m_Dependencies[dependency_index - 1];
-        TTaskID parent_task_id = dependency->m_ParentTaskID;
-        Task* parent_task = &shed->m_Tasks[parent_task_id - 1];
+        TTaskIndex parent_task_index = dependency->m_ParentTaskIndex;
+        Task* parent_task = &shed->m_Tasks[parent_task_index - 1];
+        TTaskID parent_task_id = ((uint32_t)(parent_task->m_Generation) << 16) + parent_task_index;
         if (parent_task->m_ChildDependencyCount-- == 1)
         {
             if (resolves_callback && resolves_callback->ConsumeTask(resolves_callback, parent_task_id))
@@ -211,6 +247,8 @@ static void SyncedResolveTask(HShed shed, TTaskID task_id, ResolvedCallback* res
         }
         dependency_index = dependency->m_NextParentDependencyIndex;
     }
+BIKESHED_ASSERT_EXIT(bail)
+    return;
 }
 
 static bool SyncGetFirstReadyTask(HShed shed, TTaskID* out_task_id)
@@ -224,7 +262,8 @@ static bool SyncGetFirstReadyTask(HShed shed, TTaskID* out_task_id)
     shed->m_FreeReadyTaskIndexes[shed->m_FreeReadyCount++] = *first_ready_index_ptr;
 
     *first_ready_index_ptr = ready_task->m_NextReadyTaskIndex;
-    *out_task_id = ready_task->m_TaskID;
+    Task* task = &shed->m_Tasks[ready_task->m_TaskIndex - 1];
+    *out_task_id = ((uint32_t)(task->m_Generation) << 16) + ready_task->m_TaskIndex;
     if (*first_ready_index_ptr == 0)
     {
         shed->m_LastReadyIndex = 0;
@@ -239,7 +278,7 @@ uint32_t GetShedSize(uint16_t max_task_count, uint16_t max_dependency_count)
         (uint32_t)ALIGN_SIZE((sizeof(Task) * max_task_count), 8) +
         (uint32_t)ALIGN_SIZE((sizeof(Dependency) * max_dependency_count), 8) +
         (uint32_t)ALIGN_SIZE((sizeof(ReadyTask) * (max_task_count + 1)), 8) +
-        (uint32_t)ALIGN_SIZE((sizeof(TTaskID) * max_task_count), 8) +
+        (uint32_t)ALIGN_SIZE((sizeof(TTaskIndex) * max_task_count), 8) +
         (uint32_t)ALIGN_SIZE((sizeof(TDependencyIndex) * max_dependency_count), 8) +
         (uint32_t)ALIGN_SIZE((sizeof(TReadyIndex) * max_task_count), 8);
     return size;
@@ -248,6 +287,7 @@ uint32_t GetShedSize(uint16_t max_task_count, uint16_t max_dependency_count)
 HShed CreateShed(void* mem, uint16_t max_task_count, uint16_t max_dependency_count, SyncPrimitive* sync_primitive)
 {
     HShed shed = (HShed)mem;
+    shed->m_Generation = 1;
     shed->m_FreeTaskCount = max_task_count;
     shed->m_FreeDependencyCount = max_dependency_count;
     shed->m_FreeReadyCount = max_task_count;
@@ -260,8 +300,8 @@ HShed CreateShed(void* mem, uint16_t max_task_count, uint16_t max_dependency_cou
     p += ALIGN_SIZE((sizeof(Dependency) * max_dependency_count), 8);
     shed->m_ReadyTasks = (ReadyTask*)((void*)p);
     p += ALIGN_SIZE((sizeof(ReadyTask) * (max_task_count + 1)), 8);
-    shed->m_FreeTaskIndexes = (TTaskID*)((void*)p);
-    p += ALIGN_SIZE((sizeof(TTaskID) * max_task_count), 8);
+    shed->m_FreeTaskIndexes = (TTaskIndex*)((void*)p);
+    p += ALIGN_SIZE((sizeof(TTaskIndex) * max_task_count), 8);
     shed->m_FreeDependencyIndexes = (TDependencyIndex*)((void*)p);
     p += ALIGN_SIZE((sizeof(TDependencyIndex) * max_dependency_count), 8);
     shed->m_FreeReadyTaskIndexes = (TReadyIndex*)((void*)p);
@@ -305,39 +345,24 @@ bool CreateTasks(HShed shed, uint16_t task_count, TaskFunc* task_functions, void
     }
     for (uint16_t i = 0; i < task_count; ++i)
     {
-        TTaskID task_id = shed->m_FreeTaskIndexes[--shed->m_FreeTaskCount];
-        out_task_ids[i] = task_id;
-        Task* task = &shed->m_Tasks[task_id - 1];
+        BIKESHED_FATAL_ASSERT(task_functions[i] != 0, bail);
+        TTaskIndex task_index = shed->m_FreeTaskIndexes[--shed->m_FreeTaskCount];
+        out_task_ids[i] = ((uint32_t)(shed->m_Generation) << 16) + task_index;
+        Task* task = &shed->m_Tasks[task_index - 1];
+        task->m_Generation = shed->m_Generation;
         task->m_ChildDependencyCount = 0;
         task->m_FirstParentDependencyIndex = 0;
         task->m_TaskFunc = task_functions[i];
         task->m_TaskContextData = task_context_data[i];
     }
+    ++shed->m_Generation;
     VALIDATE_STATE(shed)
+BIKESHED_ASSERT_EXIT(bail)
     if (shed->m_SyncPrimitive)
     {
         shed->m_SyncPrimitive->ReleaseLock(shed->m_SyncPrimitive);
     }
     return true;
-}
-
-void FreeTasks(HShed shed, uint16_t task_count, const TTaskID* task_ids)
-{
-    if (shed->m_SyncPrimitive && !shed->m_SyncPrimitive->AcquireLock(shed->m_SyncPrimitive))
-    {
-        return;
-    }
-    VALIDATE_STATE(shed)
-    for (uint16_t i = 0; i < task_count; ++i)
-    {
-        TTaskID task_id = task_ids[i];
-        SyncedFreeTask(shed, task_id);
-    }
-    VALIDATE_STATE(shed)
-    if (shed->m_SyncPrimitive)
-    {
-        shed->m_SyncPrimitive->ReleaseLock(shed->m_SyncPrimitive);
-    }
 }
 
 bool AddTaskDependencies(HShed shed, TTaskID task_id, uint16_t task_count, const TTaskID* dependency_task_ids)
@@ -356,20 +381,26 @@ bool AddTaskDependencies(HShed shed, TTaskID task_id, uint16_t task_count, const
         return false;
     }
 
+    TTaskIndex task_index = (TTaskIndex)(task_id & 0xffff);
+    Task* task = &shed->m_Tasks[task_index - 1];
+    BIKESHED_FATAL_ASSERT((task_id >> 16) == task->m_Generation, bail);
+
     for (uint16_t i = 0; i < task_count; ++i)
     {
         TTaskID dependency_task_id = dependency_task_ids[i];
-        Task* dependency_task = &shed->m_Tasks[dependency_task_id - 1];
+        TTaskIndex dependency_task_index = (TTaskIndex)(dependency_task_id & 0xffff);
+        Task* dependency_task = &shed->m_Tasks[dependency_task_index - 1];
+        BIKESHED_FATAL_ASSERT((dependency_task_id >> 16) == dependency_task->m_Generation, bail);
         TDependencyIndex dependency_index = shed->m_FreeDependencyIndexes[--shed->m_FreeDependencyCount];
         Dependency* dependency = &shed->m_Dependencies[dependency_index - 1];
-        dependency->m_ParentTaskID = task_id;
+        dependency->m_ParentTaskIndex = task_index;
         dependency->m_NextParentDependencyIndex = dependency_task->m_FirstParentDependencyIndex;
         dependency_task->m_FirstParentDependencyIndex = dependency_index;
     }
-    Task* task = &shed->m_Tasks[task_id - 1];
     task->m_ChildDependencyCount += task_count;
 
     VALIDATE_STATE(shed)
+BIKESHED_ASSERT_EXIT(bail)
     if (shed->m_SyncPrimitive)
     {
         shed->m_SyncPrimitive->ReleaseLock(shed->m_SyncPrimitive);
@@ -400,7 +431,9 @@ bool ReadyTasks(HShed shed, uint16_t task_count, const TTaskID* task_ids)
     for (uint16_t i = 0; i < task_count; ++i)
     {
         TTaskID task_id = task_ids[i];
-        const Task* task = &shed->m_Tasks[task_id - 1];
+        TTaskIndex task_index = (TTaskIndex)task_id & 0xffff;
+        const Task* task = &shed->m_Tasks[task_index - 1];
+        BIKESHED_FATAL_ASSERT((task_id >> 16) == task->m_Generation, bail);
         if (task->m_ChildDependencyCount != 0)
         {
             if (shed->m_SyncPrimitive)
@@ -418,6 +451,7 @@ bool ReadyTasks(HShed shed, uint16_t task_count, const TTaskID* task_ids)
     }
 
     VALIDATE_STATE(shed)
+BIKESHED_ASSERT_EXIT(bail)
     if (shed->m_SyncPrimitive)
     {
         shed->m_SyncPrimitive->ReleaseLock(shed->m_SyncPrimitive);
@@ -428,9 +462,10 @@ bool ReadyTasks(HShed shed, uint16_t task_count, const TTaskID* task_ids)
 
 void ExecuteAndResolveTask(HShed shed, TTaskID task_id, ResolvedCallback* resolves_callback)
 {
-    Task* task = &shed->m_Tasks[task_id - 1];
+    TTaskIndex task_index = (TTaskIndex)(task_id & 0xffff);
+    Task* task = &shed->m_Tasks[task_index - 1];
+    BIKESHED_FATAL_ASSERT((task_id >> 16) == task->m_Generation, bail);
 
-//    printf("\nExecuting task %d\n", (int)task_id);
     TaskResult task_result = task->m_TaskFunc(shed, task_id, task->m_TaskContextData);
 
     if (task_result == TASK_RESULT_BLOCKED)
@@ -457,6 +492,8 @@ void ExecuteAndResolveTask(HShed shed, TTaskID task_id, ResolvedCallback* resolv
     {
         shed->m_SyncPrimitive->ReleaseLock(shed->m_SyncPrimitive);
     }
+BIKESHED_ASSERT_EXIT(bail)
+    return;
 }
 
 bool ExecuteOneTask(HShed shed, ResolvedCallback* resolves_callback, TTaskID* executed_task_id)
