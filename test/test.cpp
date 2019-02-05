@@ -49,9 +49,11 @@ static void test_assert(SCtx* )
     bikeshed::SetAssert(Assert);
     bikeshed::HShed shed = bikeshed::CreateShed(malloc(bikeshed::GetShedSize(1, 1)), 1, 1, 0);
     ASSERT_NE(0, shed);
+#if defined(BIKESHED_ASSERTS)
     bikeshed::TTaskID invalid_task_id = 277;
     bikeshed::ReadyTasks(shed, 1, &invalid_task_id);
     ASSERT_EQ(1, gAssertCount);
+#endif
     free(shed);
     bikeshed::SetAssert(0);
 }
@@ -649,7 +651,7 @@ static void test_dependencies_threads(SCtx* )
         ASSERT_TRUE(bikeshed::AddTaskDependencies(shed, task_ids[parent_index], 1, &task_ids[child_index]));
     }
 
-    static const uint16_t WORKER_COUNT = 32;
+    static const uint16_t WORKER_COUNT = 7;
     NodeWorker workers[WORKER_COUNT];
     for (uint16_t worker_index = 0; worker_index < WORKER_COUNT; ++worker_index)
     {
@@ -663,6 +665,8 @@ static void test_dependencies_threads(SCtx* )
     {
         bikeshed::ExecuteOneTask(shed, 0, 0);
         // We can't wait for the signal here since it only signals if there is work to be done
+        // Ie, if another thread executes the last work item that sets done to true we will
+        // not get a signal to wake up since no new work will be set to ready.
         // So we just go like crazy until top level task sets the 'done' flag
     }
     nadir::AtomicAdd32(&stop, WORKER_COUNT);
@@ -696,13 +700,13 @@ static void test_dependencies_threads(SCtx* )
 }
 
 TEST_BEGIN(test, main_setup, main_teardown, test_setup, test_teardown)
-//    TEST(create)
-//    TEST(test_assert)
-//    TEST(single_task)
-//    TEST(test_sync)
-//    TEST(test_ready_order)
-//    TEST(test_dependency)
-//    TEST(test_worker_thread)
-//    TEST(test_dependencies_thread)
+    TEST(create)
+    TEST(test_assert)
+    TEST(single_task)
+    TEST(test_sync)
+    TEST(test_ready_order)
+    TEST(test_dependency)
+    TEST(test_worker_thread)
+    TEST(test_dependencies_thread)
     TEST(test_dependencies_threads)
 TEST_END(test)
