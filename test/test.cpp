@@ -108,7 +108,7 @@ static void single_task(SCtx* )
 
     ASSERT_TRUE(!bikeshed::CreateTasks(shed, 1, funcs, contexts, &task_id));
 
-    ASSERT_TRUE(bikeshed::ReadyTasks(shed, 1, &task_id));
+    bikeshed::ReadyTasks(shed, 1, &task_id);
 
     bikeshed::TTaskID executed_task;
     ASSERT_TRUE(bikeshed::ExecuteOneTask(shed, 0, &executed_task));
@@ -138,9 +138,8 @@ static void test_sync(SCtx* )
         {
 
         }
-        static bool lock(bikeshed::SyncPrimitive* primitive){
+        static void lock(bikeshed::SyncPrimitive* primitive){
             ((FakeLock*)primitive)->lock_count++;
-            return true;
         }
         static void unlock(bikeshed::SyncPrimitive* primitive){
             ((FakeLock*)primitive)->unlock_count++;
@@ -181,7 +180,7 @@ static void test_sync(SCtx* )
 
     ASSERT_TRUE(!bikeshed::CreateTasks(shed, 1, funcs, contexts, &task_id));
 
-    ASSERT_TRUE(bikeshed::ReadyTasks(shed, 1, &task_id));
+    bikeshed::ReadyTasks(shed, 1, &task_id);
     ASSERT_EQ(1, lock.ready_count);
 
     bikeshed::TTaskID executed_task;
@@ -241,9 +240,9 @@ static void test_ready_order(SCtx* )
     bikeshed::TTaskID task_ids[5];
 
     ASSERT_TRUE(bikeshed::CreateTasks(shed, 5, funcs, contexts, task_ids));
-    ASSERT_TRUE(bikeshed::ReadyTasks(shed, 2, &task_ids[0]));
-    ASSERT_TRUE(bikeshed::ReadyTasks(shed, 1, &task_ids[2]));
-    ASSERT_TRUE(bikeshed::ReadyTasks(shed, 2, &task_ids[3]));
+    bikeshed::ReadyTasks(shed, 2, &task_ids[0]);
+    bikeshed::ReadyTasks(shed, 1, &task_ids[2]);
+    bikeshed::ReadyTasks(shed, 2, &task_ids[3]);
 
     for (uint32_t i = 0; i < 5; ++i)
     {
@@ -301,8 +300,8 @@ static void test_dependency(SCtx* )
     ASSERT_TRUE(bikeshed::AddTaskDependencies(shed, task_ids[0], 3, &task_ids[1]));
     ASSERT_TRUE(bikeshed::AddTaskDependencies(shed, task_ids[3], 1, &task_ids[4]));
     ASSERT_TRUE(bikeshed::AddTaskDependencies(shed, task_ids[1], 1, &task_ids[4]));
-    ASSERT_TRUE(bikeshed::ReadyTasks(shed, 1, &task_ids[2]));
-    ASSERT_TRUE(bikeshed::ReadyTasks(shed, 1, &task_ids[4]));
+    bikeshed::ReadyTasks(shed, 1, &task_ids[2]);
+    bikeshed::ReadyTasks(shed, 1, &task_ids[4]);
 
     struct ResolvedCallback
     {
@@ -450,10 +449,9 @@ struct NadirLock
         nadir::DeleteNonReentrantLock(m_Lock);
         free(m_Lock);
     }
-    static bool lock(bikeshed::SyncPrimitive* primitive){
+    static void lock(bikeshed::SyncPrimitive* primitive){
         NadirLock* _this = (NadirLock*)primitive;
         nadir::LockNonReentrantLock(_this->m_Lock);
-        return true;
     }
     static void unlock(bikeshed::SyncPrimitive* primitive){
         NadirLock* _this = (NadirLock*)primitive;
@@ -463,7 +461,9 @@ struct NadirLock
         NadirLock* _this = (NadirLock*)primitive;
         if (ready_count > 1)
         {
+            nadir::LockNonReentrantLock(_this->m_Lock);
             nadir::WakeAll(_this->m_ConditionVariable);
+            nadir::UnlockNonReentrantLock(_this->m_Lock);
         }
         else if (ready_count > 0)
         {
@@ -523,7 +523,7 @@ static void test_worker_thread(SCtx* )
 
     bikeshed::TTaskID task_id;
     ASSERT_TRUE(bikeshed::CreateTasks(shed, 1, funcs, contexts, &task_id));
-    ASSERT_TRUE(bikeshed::ReadyTasks(shed, 1, &task_id));
+    bikeshed::ReadyTasks(shed, 1, &task_id);
 
     nadir::JoinThread(thread_context.thread, nadir::TIMEOUT_INFINITE);
     thread_context.DisposeThread();
@@ -571,8 +571,8 @@ static void test_dependencies_thread(SCtx* )
 
     NodeWorker thread_context;
     thread_context.CreateThread(shed, sync_primitive.m_ConditionVariable, &stop);
-    ASSERT_TRUE(bikeshed::ReadyTasks(shed, 1, &task_ids[2]));
-	ASSERT_TRUE(bikeshed::ReadyTasks(shed, 1, &task_ids[4]));
+    bikeshed::ReadyTasks(shed, 1, &task_ids[2]);
+	bikeshed::ReadyTasks(shed, 1, &task_ids[4]);
 
     nadir::JoinThread(thread_context.thread, nadir::TIMEOUT_INFINITE);
     thread_context.DisposeThread();
@@ -655,9 +655,9 @@ static void test_dependencies_threads(SCtx* )
     {
         ASSERT_TRUE(workers[worker_index].CreateThread(shed, sync_primitive.m_ConditionVariable, &stop));
     }
-    ASSERT_TRUE(bikeshed::ReadyTasks(shed, LAYER_TASK_COUNT[3], &task_ids[LAYER_TASK_OFFSET[3]]));
-    ASSERT_TRUE(bikeshed::ReadyTasks(shed, LAYER_TASK_COUNT[2] - LAYER_TASK_COUNT[3], &task_ids[LAYER_TASK_OFFSET[2] + LAYER_TASK_COUNT[3]]));
-    ASSERT_TRUE(bikeshed::ReadyTasks(shed, LAYER_TASK_COUNT[1] - LAYER_TASK_COUNT[2], &task_ids[LAYER_TASK_OFFSET[1] + LAYER_TASK_COUNT[2]]));
+    bikeshed::ReadyTasks(shed, LAYER_TASK_COUNT[3], &task_ids[LAYER_TASK_OFFSET[3]]);
+    bikeshed::ReadyTasks(shed, LAYER_TASK_COUNT[2] - LAYER_TASK_COUNT[3], &task_ids[LAYER_TASK_OFFSET[2] + LAYER_TASK_COUNT[3]]);
+    bikeshed::ReadyTasks(shed, LAYER_TASK_COUNT[1] - LAYER_TASK_COUNT[2], &task_ids[LAYER_TASK_OFFSET[1] + LAYER_TASK_COUNT[2]]);
 
     while(!done)
     {
@@ -696,13 +696,13 @@ static void test_dependencies_threads(SCtx* )
 }
 
 TEST_BEGIN(test, main_setup, main_teardown, test_setup, test_teardown)
-    TEST(create)
-    TEST(test_assert)
-    TEST(single_task)
-    TEST(test_sync)
-    TEST(test_ready_order)
-    TEST(test_dependency)
-    TEST(test_worker_thread)
-    TEST(test_dependencies_thread)
+//    TEST(create)
+//    TEST(test_assert)
+//    TEST(single_task)
+//    TEST(test_sync)
+//    TEST(test_ready_order)
+//    TEST(test_dependency)
+//    TEST(test_worker_thread)
+//    TEST(test_dependencies_thread)
     TEST(test_dependencies_threads)
 TEST_END(test)
