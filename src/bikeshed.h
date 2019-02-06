@@ -35,12 +35,7 @@ bool CreateTasks(HShed shed, uint16_t task_count, TaskFunc* task_functions, void
 void ReadyTasks(HShed shed, uint16_t task_count, const TTaskID* task_ids);
 bool AddTaskDependencies(HShed shed, TTaskID task_id, uint16_t task_count, const TTaskID* dependency_task_ids);
 
-struct ResolvedCallback
-{
-    bool (*ConsumeTask)(ResolvedCallback* callback, TTaskID task_id);
-};
-
-bool ExecuteOneTask(HShed shed, ResolvedCallback* resolved_callback, TTaskID* executed_task_id);
-void ExecuteAndResolveTask(HShed shed, TTaskID task_id, ResolvedCallback* resolved_callback);
+bool ExecuteOneTask(HShed shed, TTaskID* out_next_ready_task_id);
+void ExecuteAndResolveTask(HShed shed, TTaskID task_id, TTaskID* out_next_ready_task_id);
 
 }

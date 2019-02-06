@@ -247,7 +247,7 @@ static void SyncedReadyTask(HShed shed, TTaskID task_id)
     shed->m_LastReadyIndex = ready_index;
 }
 
-static void SyncedResolveTask(HShed shed, TTaskID task_id, ResolvedCallback* resolves_callback)
+static void SyncedResolveTask(HShed shed, TTaskID task_id, TTaskID* out_next_ready_task_id)
 {
     TTaskIndex task_index = TASK_INDEX(task_id);
     Task* task = &shed->m_Tasks[task_index - 1];
@@ -263,9 +263,9 @@ static void SyncedResolveTask(HShed shed, TTaskID task_id, ResolvedCallback* res
         BIKESHED_FATAL_ASSERT(parent_task->m_ChildDependencyCount > 0, return);
         if (parent_task->m_ChildDependencyCount-- == 1)
         {
-            if (resolves_callback && resolves_callback->ConsumeTask(resolves_callback, parent_task_id))
+            if (out_next_ready_task_id && *out_next_ready_task_id == 0)
             {
-                // Consumed by caller
+                *out_next_ready_task_id = parent_task_id;
             }
             else
             {
@@ -435,36 +435,43 @@ void ReadyTasks(HShed shed, uint16_t task_count, const TTaskID* task_ids)
     }
 }
 
-void ExecuteAndResolveTask(HShed shed, TTaskID task_id, ResolvedCallback* resolves_callback)
+void ExecuteAndResolveTask(HShed shed, TTaskID task_id, TTaskID* out_next_ready_task_id)
 {
+    if (out_next_ready_task_id)
+    {
+        *out_next_ready_task_id = 0;
+    }
     TTaskIndex task_index = TASK_INDEX(task_id);
     Task* task = &shed->m_Tasks[task_index - 1];
     BIKESHED_FATAL_ASSERT(TASK_GENERATION(task_id) == task->m_Generation, return);
 
     TaskResult task_result = task->m_TaskFunc(shed, task_id, task->m_TaskContextData);
 
-    if (task_result == TASK_RESULT_BLOCKED)
-    {
-        return;
-    }
-
     {
         SyncPrimitiveScopedLock lock(shed->m_SyncPrimitive);
-        if (task_result == TASK_RESULT_COMPLETE)
+        if (task_result == TASK_RESULT_BLOCKED)
         {
-            SyncedResolveTask(shed, task_id, resolves_callback);
+
+        }
+        else if (task_result == TASK_RESULT_COMPLETE)
+        {
+            SyncedResolveTask(shed, task_id, out_next_ready_task_id);
             SyncedFreeTask(shed, task_id);
         }
         else if (task_result == TASK_RESULT_YIELD)
         {
             SyncedReadyTask(shed, task_id);
         }
+
+        if (out_next_ready_task_id && *out_next_ready_task_id == 0)
+        {
+            SyncGetFirstReadyTask(shed, out_next_ready_task_id);
+        }
         VALIDATE_STATE(shed)
     }
-    return;
 }
 
-bool ExecuteOneTask(HShed shed, ResolvedCallback* resolves_callback, TTaskID* executed_task_id)
+bool ExecuteOneTask(HShed shed, TTaskID* out_next_ready_task_id)
 {
     TTaskID task_id;
     {
@@ -476,11 +483,7 @@ bool ExecuteOneTask(HShed shed, ResolvedCallback* resolves_callback, TTaskID* ex
         }
     }
 
-    ExecuteAndResolveTask(shed, task_id, resolves_callback);
-    if (executed_task_id != 0)
-    {
-        *executed_task_id = task_id;
-    }
+    ExecuteAndResolveTask(shed, task_id, out_next_ready_task_id);
     return true;
 }
 
