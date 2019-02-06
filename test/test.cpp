@@ -502,7 +502,6 @@ static void test_worker_thread(SCtx* )
     ASSERT_TRUE(bikeshed::CreateTasks(shed, 1, funcs, contexts, &task_id));
     bikeshed::ReadyTasks(shed, 1, &task_id);
 
-    nadir::WakeOne(sync_primitive.m_ConditionVariable);
     nadir::JoinThread(thread_context.thread, nadir::TIMEOUT_INFINITE);
     thread_context.DisposeThread();
 
