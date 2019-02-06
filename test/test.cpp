@@ -395,7 +395,7 @@ struct NodeWorker
             }
             if (!ExecuteOneTask(_this->shed, &next_ready_task))
             {
-                nadir::SleepConditionVariable(_this->condition_variable, nadir::TIMEOUT_INFINITE);
+                nadir::SleepConditionVariable(_this->condition_variable, 1000);
             }
         }
         return 0;
@@ -439,9 +439,7 @@ struct NadirLock
         NadirLock* _this = (NadirLock*)primitive;
         if (ready_count > 1)
         {
-            nadir::LockNonReentrantLock(_this->m_Lock);
             nadir::WakeAll(_this->m_ConditionVariable);
-            nadir::UnlockNonReentrantLock(_this->m_Lock);
         }
         else if (ready_count > 0)
         {
@@ -504,6 +502,7 @@ static void test_worker_thread(SCtx* )
     ASSERT_TRUE(bikeshed::CreateTasks(shed, 1, funcs, contexts, &task_id));
     bikeshed::ReadyTasks(shed, 1, &task_id);
 
+    nadir::WakeOne(sync_primitive.m_ConditionVariable);
     nadir::JoinThread(thread_context.thread, nadir::TIMEOUT_INFINITE);
     thread_context.DisposeThread();
 
@@ -652,6 +651,7 @@ static void test_dependencies_threads(SCtx* )
             // Ie, if another thread executes the last work item that sets done to true we will
             // not get a signal to wake up since no new work will be set to ready.
             // So we just go like crazy until top level task sets the 'done' flag
+            nadir::Sleep(1000);
         }
     }
     nadir::AtomicAdd32(&stop, WORKER_COUNT);
