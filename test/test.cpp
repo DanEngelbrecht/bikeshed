@@ -100,7 +100,7 @@ static void single_task(SCtx* )
         uint32_t executed;
     } task;
 
-    ASSERT_TRUE(!bikeshed::ExecuteOneTask(shed, 0, 0));
+    ASSERT_TRUE(!bikeshed::ExecuteOneTask(shed, 0));
 
     bikeshed::TaskFunc funcs[1] = {(bikeshed::TaskFunc)TaskData::Compute};
     void* contexts[1] = {&task};
@@ -112,15 +112,13 @@ static void single_task(SCtx* )
 
     bikeshed::ReadyTasks(shed, 1, &task_id);
 
-    bikeshed::TTaskID executed_task;
-    ASSERT_TRUE(bikeshed::ExecuteOneTask(shed, 0, &executed_task));
-    ASSERT_EQ(task_id, executed_task);
+    ASSERT_TRUE(bikeshed::ExecuteOneTask(shed, 0));
 
     ASSERT_EQ(shed, task.shed);
-    ASSERT_EQ(task.task_id, executed_task);
+    ASSERT_EQ(task.task_id, task_id);
     ASSERT_EQ(1, task.executed);
 
-    ASSERT_TRUE(!bikeshed::ExecuteOneTask(shed, 0, 0));
+    ASSERT_TRUE(!bikeshed::ExecuteOneTask(shed, 0));
 
     free(shed);
 }
@@ -185,15 +183,13 @@ static void test_sync(SCtx* )
     bikeshed::ReadyTasks(shed, 1, &task_id);
     ASSERT_EQ(1, lock.ready_count);
 
-    bikeshed::TTaskID executed_task;
-    ASSERT_TRUE(bikeshed::ExecuteOneTask(shed, 0, &executed_task));
-    ASSERT_EQ(task_id, executed_task);
+    ASSERT_TRUE(bikeshed::ExecuteOneTask(shed, 0));
 
     ASSERT_EQ(shed, task.shed);
     ASSERT_EQ(task.task_id, task_id);
     ASSERT_EQ(1, task.executed);
 
-    ASSERT_TRUE(!bikeshed::ExecuteOneTask(shed, 0, 0));
+    ASSERT_TRUE(!bikeshed::ExecuteOneTask(shed, 0));
 
     ASSERT_EQ(6, lock.lock_count);
     ASSERT_EQ(6, lock.unlock_count);
@@ -248,13 +244,12 @@ static void test_ready_order(SCtx* )
 
     for (uint32_t i = 0; i < 5; ++i)
     {
-        bikeshed::TTaskID executed_task;
-        ASSERT_TRUE(bikeshed::ExecuteOneTask(shed, 0, &executed_task));
-        ASSERT_EQ(task_ids[i], executed_task);
+        ASSERT_TRUE(bikeshed::ExecuteOneTask(shed, 0));
+        ASSERT_EQ(task_ids[i], tasks[i].task_id);
         ASSERT_EQ(shed, tasks[i].shed);
         ASSERT_EQ(1, tasks[i].executed);
     }
-    ASSERT_TRUE(!bikeshed::ExecuteOneTask(shed, 0, 0));
+    ASSERT_TRUE(!bikeshed::ExecuteOneTask(shed, 0));
     free(shed);
 }
 
@@ -268,7 +263,7 @@ static void test_dependency(SCtx* )
     struct TaskData {
         TaskData()
             : shed(0)
-            , task_id((bikeshed::TTaskID)-1)
+            , task_id(0)
             , executed(0)
         { }
         static bikeshed::TaskResult Compute(bikeshed::HShed shed, bikeshed::TTaskID task_id, TaskData* task_data)
@@ -305,48 +300,47 @@ static void test_dependency(SCtx* )
     bikeshed::ReadyTasks(shed, 1, &task_ids[2]);
     bikeshed::ReadyTasks(shed, 1, &task_ids[4]);
 
-    struct ResolvedCallback
+    auto execute_one = [&](uint16_t task_index)
     {
-        bikeshed::ResolvedCallback m_ResolvedCallback;
-        uint32_t resolve_count;
-        ResolvedCallback()
-            : m_ResolvedCallback{ConsumeTask}
-            , resolve_count(0)
-        { }
-        static bool ConsumeTask(bikeshed::ResolvedCallback* callback, bikeshed::TTaskID )
+        if (tasks[task_index].shed != 0)
         {
-            ResolvedCallback* resolved_callback = (ResolvedCallback*)callback;
-            ++resolved_callback->resolve_count;
             return false;
         }
-    } resolved_callback;
+        if (tasks[task_index].executed != 0)
+        {
+            return false;
+        }
+        if (tasks[task_index].task_id != 0)
+        {
+            return false;
+        }
 
-    auto execute_one = [&](bikeshed::TTaskID expected_ready)
-    {
-        resolved_callback.resolve_count = 0;
-        bikeshed::TTaskID executed_task;
-        bool executed =  ExecuteOneTask(shed, &resolved_callback.m_ResolvedCallback, &executed_task);
+        bool executed = ExecuteOneTask(shed, 0);
         if (!executed)
         {
             return false;
         }
-        if (executed_task != expected_ready)
+
+        if (tasks[task_index].shed != shed)
+        {
+            return false;
+        }
+        if (tasks[task_index].executed != 1)
+        {
+            return false;
+        }
+        if (tasks[task_index].task_id != task_ids[task_index])
         {
             return false;
         }
         return true;
     };
 
-    ASSERT_TRUE(execute_one(task_ids[2]));
-    ASSERT_EQ(0, resolved_callback.resolve_count);
-    ASSERT_TRUE(execute_one(task_ids[4]));
-    ASSERT_EQ(2, resolved_callback.resolve_count);
-    ASSERT_TRUE(execute_one(task_ids[1]));
-    ASSERT_EQ(0, resolved_callback.resolve_count);
-    ASSERT_TRUE(execute_one(task_ids[3]));
-    ASSERT_EQ(1, resolved_callback.resolve_count);
-    ASSERT_TRUE(execute_one(task_ids[0]));
-    ASSERT_EQ(0, resolved_callback.resolve_count);
+    ASSERT_TRUE(execute_one(2));
+    ASSERT_TRUE(execute_one(4));
+    ASSERT_TRUE(execute_one(1));
+    ASSERT_TRUE(execute_one(3));
+    ASSERT_TRUE(execute_one(0));
 
     for (uint32_t i = 0; i < 5; ++i)
     {
@@ -355,7 +349,7 @@ static void test_dependency(SCtx* )
         ASSERT_EQ(1, tasks[i].executed);
     }
 
-    ASSERT_TRUE(!bikeshed::ExecuteOneTask(shed, 0, 0));
+    ASSERT_TRUE(!bikeshed::ExecuteOneTask(shed, 0));
     free(shed);
 }
 
@@ -391,36 +385,15 @@ struct NodeWorker
     {
         NodeWorker* _this = (NodeWorker*)context;
 
-        struct ResolvedCallback
-        {
-            bikeshed::ResolvedCallback m_ResolvedCallback;
-            bikeshed::TTaskID m_ResolvedTask;
-            ResolvedCallback()
-                : m_ResolvedCallback{ConsumeTask}
-                , m_ResolvedTask(0)
-            { }
-            static bool ConsumeTask(bikeshed::ResolvedCallback* callback, bikeshed::TTaskID task_id)
-            {
-                ResolvedCallback* resolved_callback = (ResolvedCallback*)callback;
-                if (resolved_callback->m_ResolvedTask == 0)
-                {
-                    resolved_callback->m_ResolvedTask = task_id;
-                    return true;                    
-                }
-                return false;
-            }
-        } resolved_callback;
-
+        bikeshed::TTaskID next_ready_task = 0;
         while(*_this->stop == 0)
         {
-            if (resolved_callback.m_ResolvedTask != 0)
+            if (next_ready_task != 0)
             {
-                bikeshed::TTaskID task_id = resolved_callback.m_ResolvedTask;
-                resolved_callback.m_ResolvedTask = 0;
-                bikeshed::ExecuteAndResolveTask(_this->shed, task_id, &resolved_callback.m_ResolvedCallback);
+                bikeshed::ExecuteAndResolveTask(_this->shed, next_ready_task, &next_ready_task);
                 continue;
             }
-            if (!bikeshed::ExecuteOneTask(_this->shed, &resolved_callback.m_ResolvedCallback, 0))
+            if (!ExecuteOneTask(_this->shed, &next_ready_task))
             {
                 nadir::SleepConditionVariable(_this->condition_variable, nadir::TIMEOUT_INFINITE);
             }
@@ -534,7 +507,7 @@ static void test_worker_thread(SCtx* )
     ASSERT_EQ(task_id, task.task_id);
     ASSERT_EQ(1, task.executed);
 
-    ASSERT_TRUE(!bikeshed::ExecuteOneTask(shed, 0, 0));
+    ASSERT_TRUE(!bikeshed::ExecuteOneTask(shed, 0));
 
     free(shed);
 }
@@ -586,7 +559,7 @@ static void test_dependencies_thread(SCtx* )
         ASSERT_EQ(1, tasks[i].executed);
     }
 
-    ASSERT_TRUE(!bikeshed::ExecuteOneTask(shed, 0, 0));
+    ASSERT_TRUE(!bikeshed::ExecuteOneTask(shed, 0));
 
     free(shed);
 }
@@ -661,13 +634,21 @@ static void test_dependencies_threads(SCtx* )
     bikeshed::ReadyTasks(shed, LAYER_TASK_COUNT[2] - LAYER_TASK_COUNT[3], &task_ids[LAYER_TASK_OFFSET[2] + LAYER_TASK_COUNT[3]]);
     bikeshed::ReadyTasks(shed, LAYER_TASK_COUNT[1] - LAYER_TASK_COUNT[2], &task_ids[LAYER_TASK_OFFSET[1] + LAYER_TASK_COUNT[2]]);
 
+    bikeshed::TTaskID next_ready_task = 0;
     while(!done)
     {
-        bikeshed::ExecuteOneTask(shed, 0, 0);
-        // We can't wait for the signal here since it only signals if there is work to be done
-        // Ie, if another thread executes the last work item that sets done to true we will
-        // not get a signal to wake up since no new work will be set to ready.
-        // So we just go like crazy until top level task sets the 'done' flag
+        if (next_ready_task != 0)
+        {
+            bikeshed::ExecuteAndResolveTask(shed, next_ready_task, &next_ready_task);
+            continue;
+        }
+        if (!ExecuteOneTask(shed, &next_ready_task))
+        {
+            // We can't wait for the signal here since it only signals if there is work to be done
+            // Ie, if another thread executes the last work item that sets done to true we will
+            // not get a signal to wake up since no new work will be set to ready.
+            // So we just go like crazy until top level task sets the 'done' flag
+        }
     }
     nadir::AtomicAdd32(&stop, WORKER_COUNT);
     nadir::WakeAll(sync_primitive.m_ConditionVariable);
@@ -694,7 +675,7 @@ static void test_dependencies_threads(SCtx* )
         ASSERT_EQ(1, tasks[i].executed);
     }
 
-    ASSERT_TRUE(!bikeshed::ExecuteOneTask(shed, 0, 0));
+    ASSERT_TRUE(!bikeshed::ExecuteOneTask(shed, 0));
 
     free(shed);
 }
