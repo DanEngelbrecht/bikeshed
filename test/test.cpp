@@ -50,7 +50,7 @@ static void test_assert(SCtx* )
     bikeshed::HShed shed = bikeshed::CreateShed(malloc(bikeshed::GetShedSize(1, 1)), 1, 1, 0);
     ASSERT_NE(0, shed);
 #if defined(BIKESHED_ASSERTS)
-    bikeshed::TTaskID invalid_task_id = 277;
+    bikeshed::TTaskID invalid_task_id = 1;
     bikeshed::ReadyTasks(shed, 1, &invalid_task_id);
     ASSERT_EQ(1, gAssertCount);
 #endif
