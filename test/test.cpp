@@ -412,6 +412,7 @@ struct NadirLock
     bikeshed::SyncPrimitive m_SyncPrimitive;
     NadirLock()
         : m_SyncPrimitive{lock, unlock, signal}
+        , m_SpinLock(nadir::CreateSpinLock(malloc(nadir::GetSpinLockSize())))
         , m_Lock(nadir::CreateLock(malloc(nadir::GetNonReentrantLockSize())))
         , m_ConditionVariable(nadir::CreateConditionVariable(malloc(nadir::GetConditionVariableSize()), m_Lock))
     {
@@ -423,14 +424,16 @@ struct NadirLock
         free(m_ConditionVariable);
         nadir::DeleteNonReentrantLock(m_Lock);
         free(m_Lock);
+        nadir::DeleteSpinLock(m_SpinLock);
+        free(m_SpinLock);
     }
     static void lock(bikeshed::SyncPrimitive* primitive){
         NadirLock* _this = (NadirLock*)primitive;
-        nadir::LockNonReentrantLock(_this->m_Lock);
+        nadir::LockSpinLock(_this->m_SpinLock);
     }
     static void unlock(bikeshed::SyncPrimitive* primitive){
         NadirLock* _this = (NadirLock*)primitive;
-        nadir::UnlockNonReentrantLock(_this->m_Lock);
+        nadir::UnlockSpinLock(_this->m_SpinLock);
     }
     static void signal(bikeshed::SyncPrimitive* primitive, uint16_t ready_count){
         NadirLock* _this = (NadirLock*)primitive;
@@ -445,6 +448,7 @@ struct NadirLock
             nadir::WakeOne(_this->m_ConditionVariable);
         }
     }
+    nadir::HSpinLock m_SpinLock;
     nadir::HNonReentrantLock m_Lock;
     nadir::HConditionVariable m_ConditionVariable;
 };
