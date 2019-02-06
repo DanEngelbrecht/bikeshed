@@ -3,7 +3,7 @@
 #define ALIGN_SIZE(x, align)    (((x) + ((align) - 1)) & ~((align) - 1))
 
 #if defined(BIKESHED_ASSERTS)
-    #define BIKESHED_FATAL_ASSERT(x, ret) if (gAssert && !(x)) {gAssert(__FILE__, __LINE__); return ret;}
+    #define BIKESHED_FATAL_ASSERT(x, bail) if (gAssert && !(x)) {gAssert(__FILE__, __LINE__); bail;}
 #else // defined(BIKESHED_ASSERTS)
     #define BIKESHED_FATAL_ASSERT(x, y)
 #endif // defined(BIKESHED_ASSERTS)
@@ -215,7 +215,7 @@ static void SyncedFreeTask(HShed shed, TTaskID task_id)
 {
     TTaskIndex task_index = TASK_INDEX(task_id);
     Task* task = &shed->m_Tasks[task_index - 1];
-    BIKESHED_FATAL_ASSERT(TASK_GENERATION(task_id) == task->m_Generation, );
+    BIKESHED_FATAL_ASSERT(TASK_GENERATION(task_id) == task->m_Generation, return);
     task->m_Generation = 0;
     shed->m_FreeTaskIndexes[shed->m_FreeTaskCount++] = task_index;
     TDependencyIndex dependency_index = task->m_FirstParentDependencyIndex;
@@ -230,7 +230,7 @@ static void SyncedFreeTask(HShed shed, TTaskID task_id)
 static void SyncedReadyTask(HShed shed, TTaskID task_id)
 {
     TTaskIndex task_index = TASK_INDEX(task_id);
-    BIKESHED_FATAL_ASSERT(TASK_GENERATION(task_id) == shed->m_Tasks[task_index - 1].m_Generation, );
+    BIKESHED_FATAL_ASSERT(TASK_GENERATION(task_id) == shed->m_Tasks[task_index - 1].m_Generation, return);
     TReadyIndex ready_index = shed->m_FreeReadyTaskIndexes[--shed->m_FreeReadyCount];
     ReadyTask* ready_task = &shed->m_ReadyTasks[ready_index - 1];
     ready_task->m_TaskIndex = task_index;
@@ -251,7 +251,7 @@ static void SyncedResolveTask(HShed shed, TTaskID task_id, ResolvedCallback* res
 {
     TTaskIndex task_index = TASK_INDEX(task_id);
     Task* task = &shed->m_Tasks[task_index - 1];
-    BIKESHED_FATAL_ASSERT(TASK_GENERATION(task_id) == task->m_Generation, );
+    BIKESHED_FATAL_ASSERT(TASK_GENERATION(task_id) == task->m_Generation, return);
     TDependencyIndex dependency_index = task->m_FirstParentDependencyIndex;
 
     while (dependency_index != 0)
@@ -260,7 +260,7 @@ static void SyncedResolveTask(HShed shed, TTaskID task_id, ResolvedCallback* res
         TTaskIndex parent_task_index = dependency->m_ParentTaskIndex;
         Task* parent_task = &shed->m_Tasks[parent_task_index - 1];
 		TTaskID parent_task_id = TASK_ID(parent_task_index, parent_task->m_Generation);
-        BIKESHED_FATAL_ASSERT(parent_task->m_ChildDependencyCount > 0, );
+        BIKESHED_FATAL_ASSERT(parent_task->m_ChildDependencyCount > 0, return);
         if (parent_task->m_ChildDependencyCount-- == 1)
         {
             if (resolves_callback && resolves_callback->ConsumeTask(resolves_callback, parent_task_id))
@@ -362,7 +362,7 @@ bool CreateTasks(HShed shed, uint16_t task_count, TaskFunc* task_functions, void
     }
     for (uint16_t i = 0; i < task_count; ++i)
     {
-        BIKESHED_FATAL_ASSERT(task_functions[i] != 0, false);
+        BIKESHED_FATAL_ASSERT(task_functions[i] != 0, return false);
         TTaskIndex task_index = shed->m_FreeTaskIndexes[--shed->m_FreeTaskCount];
         out_task_ids[i] = TASK_ID(task_index, shed->m_Generation);
         Task* task = &shed->m_Tasks[task_index - 1];
@@ -388,14 +388,14 @@ bool AddTaskDependencies(HShed shed, TTaskID task_id, uint16_t task_count, const
 
     TTaskIndex task_index = TASK_INDEX(task_id);
     Task* task = &shed->m_Tasks[task_index - 1];
-    BIKESHED_FATAL_ASSERT(TASK_GENERATION(task_id) == task->m_Generation, false);
+    BIKESHED_FATAL_ASSERT(TASK_GENERATION(task_id) == task->m_Generation, return false);
 
     for (uint16_t i = 0; i < task_count; ++i)
     {
         TTaskID dependency_task_id = dependency_task_ids[i];
         TTaskIndex dependency_task_index = TASK_INDEX(dependency_task_id);
         Task* dependency_task = &shed->m_Tasks[dependency_task_index - 1];
-        BIKESHED_FATAL_ASSERT(TASK_GENERATION(dependency_task_id) == dependency_task->m_Generation, false);
+        BIKESHED_FATAL_ASSERT(TASK_GENERATION(dependency_task_id) == dependency_task->m_Generation, return false);
         TDependencyIndex dependency_index = shed->m_FreeDependencyIndexes[--shed->m_FreeDependencyCount];
         Dependency* dependency = &shed->m_Dependencies[dependency_index - 1];
         dependency->m_ParentTaskIndex = task_index;
@@ -417,13 +417,13 @@ void ReadyTasks(HShed shed, uint16_t task_count, const TTaskID* task_ids)
     {
         SyncPrimitiveScopedLock lock(shed->m_SyncPrimitive);
         VALIDATE_STATE(shed)
-        BIKESHED_FATAL_ASSERT(task_count <= shed->m_FreeReadyCount, );
+        BIKESHED_FATAL_ASSERT(task_count <= shed->m_FreeReadyCount, return);
 
         for (uint16_t i = 0; i < task_count; ++i)
         {
             TTaskID task_id = task_ids[i];
-			BIKESHED_FATAL_ASSERT(TASK_GENERATION(task_id) == shed->m_Tasks[TASK_INDEX(task_id) - 1].m_Generation, );
-			BIKESHED_FATAL_ASSERT(shed->m_Tasks[TASK_INDEX(task_id) - 1].m_ChildDependencyCount == 0, );
+			BIKESHED_FATAL_ASSERT(TASK_GENERATION(task_id) == shed->m_Tasks[TASK_INDEX(task_id) - 1].m_Generation, return);
+			BIKESHED_FATAL_ASSERT(shed->m_Tasks[TASK_INDEX(task_id) - 1].m_ChildDependencyCount == 0, return);
             SyncedReadyTask(shed, task_id);
         }
 
@@ -439,7 +439,7 @@ void ExecuteAndResolveTask(HShed shed, TTaskID task_id, ResolvedCallback* resolv
 {
     TTaskIndex task_index = TASK_INDEX(task_id);
     Task* task = &shed->m_Tasks[task_index - 1];
-    BIKESHED_FATAL_ASSERT(TASK_GENERATION(task_id) == task->m_Generation, );
+    BIKESHED_FATAL_ASSERT(TASK_GENERATION(task_id) == task->m_Generation, return);
 
     TaskResult task_result = task->m_TaskFunc(shed, task_id, task->m_TaskContextData);
 
