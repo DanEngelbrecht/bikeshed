@@ -422,6 +422,7 @@ void ReadyTasks(HShed shed, uint16_t task_count, const TTaskID* task_ids)
         for (uint16_t i = 0; i < task_count; ++i)
         {
             TTaskID task_id = task_ids[i];
+			BIKESHED_FATAL_ASSERT(0 != shed->m_Tasks[TASK_INDEX(task_id) - 1].m_TaskFunc, return);
 			BIKESHED_FATAL_ASSERT(TASK_GENERATION(task_id) == shed->m_Tasks[TASK_INDEX(task_id) - 1].m_Generation, return);
 			BIKESHED_FATAL_ASSERT(shed->m_Tasks[TASK_INDEX(task_id) - 1].m_ChildDependencyCount == 0, return);
             SyncedReadyTask(shed, task_id);
