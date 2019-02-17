@@ -16,7 +16,6 @@ struct SyncPrimitive
     void (*SignalReady)(SyncPrimitive* primitive, uint16_t ready_count);
 };
 
-// We probably want to extend TTaskID to 32-bit and use some bits for generation to avoid using stale ids
 typedef uint32_t TTaskID;
 
 enum TaskResult
