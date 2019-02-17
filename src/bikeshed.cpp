@@ -8,19 +8,6 @@
     #define BIKESHED_FATAL_ASSERT(x, y)
 #endif // defined(BIKESHED_ASSERTS)
 
-#if defined(ENABLE_VALIDATE_STATE)
-    #include <assert.h>
-    #ifdef _WIN32
-        #include <malloc.h>
-        #define alloca _alloca
-    #else
-        #include <alloca.h>
-    #endif
-    #define VALIDATE_STATE(shed) assert(ValidateState(shed));
-#else
-    #define VALIDATE_STATE(shed)
-#endif
-
 namespace bikeshed
 {
 
@@ -103,113 +90,6 @@ struct SyncPrimitiveScopedLock
 
     SyncPrimitive* m_SyncPrimitive;
 };
-
-#if defined(ENABLE_VALIDATE_STATE)
-static bool ValidateState(HShed shed)
-{
-    if (shed->m_FreeTaskCount > shed->m_MaxTaskCount)
-    {
-        return false;
-    }
-    if (shed->m_FreeDependencyCount > shed->m_MaxDependencyCount)
-    {
-        return false;
-    }
-    if (shed->m_FreeReadyCount > shed->m_MaxTaskCount)
-    {
-        return false;
-    }
-    if (shed->m_FirstReadyIndex > shed->m_MaxTaskCount)
-    {
-        return false;
-    }
-    if (shed->m_LastReadyIndex > shed->m_MaxTaskCount)
-    {
-        return false;
-    }
-    uint16_t* validate_child_count = (uint16_t*)alloca(sizeof(uint16_t) * shed->m_MaxTaskCount);
-    for (uint16_t i = 1; i < shed->m_MaxTaskCount; ++i)
-    {
-        validate_child_count[i] = 0;
-    }
-
-    uint16_t allocated_task_count = shed->m_MaxTaskCount - shed->m_FreeTaskCount;
-    uint16_t ready_task_count = 0;
-    uint16_t ready_index = shed->m_FirstReadyIndex;
-    while (ready_index != shed->m_MaxTaskCount)
-    {
-        ReadyTask* ready_task = &shed->m_ReadyTasks[ready_index];
-        if (ready_task->m_TaskID > shed->m_MaxTaskCount)
-        {
-            return false;
-        }
-        if (ready_task->m_NextReadyTaskIndex > shed->m_MaxTaskCount)
-        {
-            return false;
-        }
-        Task* task = &shed->m_Tasks[ready_task->m_TaskID];
-        if (task->m_TaskFunc == 0)
-        {
-            return false;
-        }
-        ready_index = ready_task->m_NextReadyTaskIndex;
-        ++ready_task_count;
-        if (ready_task_count > allocated_task_count)
-        {
-            return false;
-        }
-    }
-
-    uint16_t live_task_count = 0;
-    for (uint16_t i = 0; i < shed->m_MaxTaskCount; ++i)
-    {
-        Task* task = &shed->m_Tasks[i];
-        if (task->m_TaskFunc == 0)
-        {
-            continue;
-        }
-        ++live_task_count;
-        if (live_task_count > allocated_task_count)
-        {
-            return false;
-        }
-        uint16_t dependency_index = task->m_FirstParentDependencyIndex;
-        while (dependency_index != shed->m_MaxDependencyCount)
-        {
-            Dependency* dependency = &shed->m_Dependencies[dependency_index - 1];
-            if (dependency->m_NextParentDependencyIndex > shed->m_MaxDependencyCount)
-            {
-                return false;
-            }
-            TTaskID parent_task_id = dependency->m_ParentTaskID;
-            if (parent_task_id > shed->m_MaxTaskCount)
-            {
-                return false;
-            }
-            Task* parent_task = &shed->m_Tasks[parent_task_id];
-            if (parent_task->m_TaskFunc == 0)
-            {
-                return false;
-            }
-            validate_child_count[parent_task_id]++;
-            dependency_index = dependency->m_NextParentDependencyIndex;
-        }
-    }
-    for (uint16_t i = 0; i < shed->m_MaxTaskCount; ++i)
-    {
-        Task* task = &shed->m_Tasks[i];
-        if (task->m_TaskFunc == 0)
-        {
-            continue;
-        }
-        if (task->m_ChildDependencyCount != validate_child_count[i])
-        {
-            return false;
-        }
-    }
-    return true;
-}
-#endif
 
 static void SyncedFreeTask(HShed shed, TTaskID task_id)
 {
@@ -355,7 +235,6 @@ bool CreateTasks(HShed shed, uint16_t task_count, TaskFunc* task_functions, void
 {
     SyncPrimitiveScopedLock lock(shed->m_SyncPrimitive);
 
-    VALIDATE_STATE(shed)
     if (task_count > shed->m_FreeTaskCount)
     {
         return false;
@@ -373,14 +252,12 @@ bool CreateTasks(HShed shed, uint16_t task_count, TaskFunc* task_functions, void
         task->m_TaskContextData = task_context_data[i];
     }
     ++shed->m_Generation;
-    VALIDATE_STATE(shed)
     return true;
 }
 
 bool AddTaskDependencies(HShed shed, TTaskID task_id, uint16_t task_count, const TTaskID* dependency_task_ids)
 {
     SyncPrimitiveScopedLock lock(shed->m_SyncPrimitive);
-    VALIDATE_STATE(shed)
     if (task_count > shed->m_FreeDependencyCount)
     {
         return false;
@@ -404,7 +281,6 @@ bool AddTaskDependencies(HShed shed, TTaskID task_id, uint16_t task_count, const
     }
     task->m_ChildDependencyCount += task_count;
 
-    VALIDATE_STATE(shed)
     return true;
 }
 
@@ -416,7 +292,6 @@ void ReadyTasks(HShed shed, uint16_t task_count, const TTaskID* task_ids)
     }
     {
         SyncPrimitiveScopedLock lock(shed->m_SyncPrimitive);
-        VALIDATE_STATE(shed)
         BIKESHED_FATAL_ASSERT(task_count <= shed->m_FreeReadyCount, return);
 
         for (uint16_t i = 0; i < task_count; ++i)
@@ -427,8 +302,6 @@ void ReadyTasks(HShed shed, uint16_t task_count, const TTaskID* task_ids)
 			BIKESHED_FATAL_ASSERT(shed->m_Tasks[TASK_INDEX(task_id) - 1].m_ChildDependencyCount == 0, return);
             SyncedReadyTask(shed, task_id);
         }
-
-        VALIDATE_STATE(shed)
     }
     if (shed->m_SyncPrimitive)
     {
@@ -468,7 +341,6 @@ void ExecuteAndResolveTask(HShed shed, TTaskID task_id, TTaskID* out_next_ready_
         {
             SyncGetFirstReadyTask(shed, out_next_ready_task_id);
         }
-        VALIDATE_STATE(shed)
     }
 }
 
@@ -477,7 +349,6 @@ bool ExecuteOneTask(HShed shed, TTaskID* out_next_ready_task_id)
     TTaskID task_id;
     {
         SyncPrimitiveScopedLock lock(shed->m_SyncPrimitive);
-        VALIDATE_STATE(shed)
         if (!SyncGetFirstReadyTask(shed, &task_id))
         {
             return false;
