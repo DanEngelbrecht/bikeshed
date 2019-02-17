@@ -134,8 +134,8 @@ static void test_yield(SCtx* )
         TaskData()
             : shed(0)
             , task_id((bikeshed::TTaskID)-1)
-            , executed(0)
             , yield_count(0)
+            , executed(0)
         { }
         static bikeshed::TaskResult Compute(bikeshed::HShed shed, bikeshed::TTaskID task_id, TaskData* task_data)
         {
@@ -149,9 +149,9 @@ static void test_yield(SCtx* )
             task_data->task_id = task_id;
             return bikeshed::TASK_RESULT_COMPLETE;
         }
-        uint8_t yield_count;
         bikeshed::HShed shed;
         bikeshed::TTaskID task_id;
+        uint8_t yield_count;
         uint32_t executed;
     };
 
@@ -217,8 +217,8 @@ static void test_blocked(SCtx* )
         TaskData()
             : shed(0)
             , task_id((bikeshed::TTaskID)-1)
-            , executed(0)
             , blocked_count(0)
+            , executed(0)
         { }
         static bikeshed::TaskResult Compute(bikeshed::HShed shed, bikeshed::TTaskID task_id, TaskData* task_data)
         {
@@ -232,9 +232,9 @@ static void test_blocked(SCtx* )
             task_data->task_id = task_id;
             return bikeshed::TASK_RESULT_COMPLETE;
         }
-        uint8_t blocked_count;
         bikeshed::HShed shed;
         bikeshed::TTaskID task_id;
+        uint8_t blocked_count;
         uint32_t executed;
     };
 
