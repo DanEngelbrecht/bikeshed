@@ -123,6 +123,175 @@ static void single_task(SCtx* )
     free(shed);
 }
 
+static void test_yield(SCtx* )
+{
+    AssertAbort fatal;
+
+    bikeshed::HShed shed = bikeshed::CreateShed(malloc(bikeshed::GetShedSize(2, 0)), 2, 0, 0x0);
+    ASSERT_NE(0, shed);
+
+    struct TaskData {
+        TaskData()
+            : shed(0)
+            , task_id((bikeshed::TTaskID)-1)
+            , yield_count(0)
+            , executed(0)
+        { }
+        static bikeshed::TaskResult Compute(bikeshed::HShed shed, bikeshed::TTaskID task_id, TaskData* task_data)
+        {
+            ++task_data->executed;
+            if (task_data->yield_count > 0)
+            {
+                --task_data->yield_count;
+                return bikeshed::TASK_RESULT_YIELD;
+            }
+            task_data->shed = shed;
+            task_data->task_id = task_id;
+            return bikeshed::TASK_RESULT_COMPLETE;
+        }
+        bikeshed::HShed shed;
+        bikeshed::TTaskID task_id;
+        uint8_t yield_count;
+        uint32_t executed;
+    };
+
+    TaskData tasks[2];
+    tasks[0].yield_count = 1;
+
+    bikeshed::TaskFunc funcs[2] = {
+        (bikeshed::TaskFunc)TaskData::Compute,
+        (bikeshed::TaskFunc)TaskData::Compute};
+    void* contexts[2] = {&tasks[0], &tasks[1]};
+
+    bikeshed::TTaskID task_ids[2];
+    ASSERT_TRUE(bikeshed::CreateTasks(shed, 2, funcs, contexts, task_ids));
+
+    bikeshed::ReadyTasks(shed, 2, task_ids);
+
+    ASSERT_TRUE(bikeshed::ExecuteOneTask(shed, 0));
+    ASSERT_EQ(0, tasks[0].yield_count);
+    ASSERT_EQ(0, tasks[0].shed);
+    ASSERT_EQ((bikeshed::TTaskID)-1, tasks[0].task_id);
+    ASSERT_EQ(1, tasks[0].executed);
+
+    ASSERT_EQ(0, tasks[1].yield_count);
+    ASSERT_EQ(0, tasks[1].shed);
+    ASSERT_EQ((bikeshed::TTaskID)-1, tasks[1].task_id);
+    ASSERT_EQ(0, tasks[1].executed);
+
+    ASSERT_TRUE(bikeshed::ExecuteOneTask(shed, 0));
+    ASSERT_EQ(0, tasks[0].yield_count);
+    ASSERT_EQ(0, tasks[0].shed);
+    ASSERT_EQ((bikeshed::TTaskID)-1, tasks[0].task_id);
+    ASSERT_EQ(1, tasks[0].executed);
+
+    ASSERT_EQ(0, tasks[0].yield_count);
+    ASSERT_EQ(shed, tasks[1].shed);
+    ASSERT_EQ(task_ids[1], tasks[1].task_id);
+    ASSERT_EQ(1, tasks[1].executed);
+
+    ASSERT_TRUE(bikeshed::ExecuteOneTask(shed, 0));
+    ASSERT_EQ(0, tasks[0].yield_count);
+    ASSERT_EQ(shed, tasks[0].shed);
+    ASSERT_EQ(task_ids[0], tasks[0].task_id);
+    ASSERT_EQ(2, tasks[0].executed);
+
+    ASSERT_EQ(0, tasks[0].yield_count);
+    ASSERT_EQ(shed, tasks[1].shed);
+    ASSERT_EQ(task_ids[1], tasks[1].task_id);
+    ASSERT_EQ(1, tasks[1].executed);
+
+    ASSERT_TRUE(!bikeshed::ExecuteOneTask(shed, 0));
+
+    free(shed);
+}
+
+static void test_blocked(SCtx* )
+{
+    AssertAbort fatal;
+
+    bikeshed::HShed shed = bikeshed::CreateShed(malloc(bikeshed::GetShedSize(2, 0)), 2, 0, 0x0);
+    ASSERT_NE(0, shed);
+
+    struct TaskData {
+        TaskData()
+            : shed(0)
+            , task_id((bikeshed::TTaskID)-1)
+            , blocked_count(0)
+            , executed(0)
+        { }
+        static bikeshed::TaskResult Compute(bikeshed::HShed shed, bikeshed::TTaskID task_id, TaskData* task_data)
+        {
+            ++task_data->executed;
+            if (task_data->blocked_count > 0)
+            {
+                --task_data->blocked_count;
+                return bikeshed::TASK_RESULT_BLOCKED;
+            }
+            task_data->shed = shed;
+            task_data->task_id = task_id;
+            return bikeshed::TASK_RESULT_COMPLETE;
+        }
+        bikeshed::HShed shed;
+        bikeshed::TTaskID task_id;
+        uint8_t blocked_count;
+        uint32_t executed;
+    };
+
+    TaskData tasks[2];
+    tasks[0].blocked_count = 1;
+
+    bikeshed::TaskFunc funcs[2] = {
+        (bikeshed::TaskFunc)TaskData::Compute,
+        (bikeshed::TaskFunc)TaskData::Compute};
+    void* contexts[2] = {&tasks[0], &tasks[1]};
+
+    bikeshed::TTaskID task_ids[2];
+    ASSERT_TRUE(bikeshed::CreateTasks(shed, 2, funcs, contexts, task_ids));
+
+    bikeshed::ReadyTasks(shed, 2, task_ids);
+
+    ASSERT_TRUE(bikeshed::ExecuteOneTask(shed, 0));
+    ASSERT_EQ(0, tasks[0].blocked_count);
+    ASSERT_EQ(0, tasks[0].shed);
+    ASSERT_EQ((bikeshed::TTaskID)-1, tasks[0].task_id);
+    ASSERT_EQ(1, tasks[0].executed);
+
+    ASSERT_EQ(0, tasks[1].blocked_count);
+    ASSERT_EQ(0, tasks[1].shed);
+    ASSERT_EQ((bikeshed::TTaskID)-1, tasks[1].task_id);
+    ASSERT_EQ(0, tasks[1].executed);
+
+    ASSERT_TRUE(bikeshed::ExecuteOneTask(shed, 0));
+    ASSERT_EQ(0, tasks[0].blocked_count);
+    ASSERT_EQ(0, tasks[0].shed);
+    ASSERT_EQ((bikeshed::TTaskID)-1, tasks[0].task_id);
+    ASSERT_EQ(1, tasks[0].executed);
+
+    ASSERT_EQ(0, tasks[0].blocked_count);
+    ASSERT_EQ(shed, tasks[1].shed);
+    ASSERT_EQ(task_ids[1], tasks[1].task_id);
+    ASSERT_EQ(1, tasks[1].executed);
+
+    ASSERT_TRUE(!bikeshed::ExecuteOneTask(shed, 0));
+    bikeshed::ReadyTasks(shed, 1, &task_ids[0]);
+
+    ASSERT_TRUE(bikeshed::ExecuteOneTask(shed, 0));
+    ASSERT_EQ(0, tasks[0].blocked_count);
+    ASSERT_EQ(shed, tasks[0].shed);
+    ASSERT_EQ(task_ids[0], tasks[0].task_id);
+    ASSERT_EQ(2, tasks[0].executed);
+
+    ASSERT_EQ(0, tasks[0].blocked_count);
+    ASSERT_EQ(shed, tasks[1].shed);
+    ASSERT_EQ(task_ids[1], tasks[1].task_id);
+    ASSERT_EQ(1, tasks[1].executed);
+
+    ASSERT_TRUE(!bikeshed::ExecuteOneTask(shed, 0));
+
+    free(shed);
+}
+
 static void test_sync(SCtx* )
 {
     AssertAbort fatal;
@@ -683,10 +852,13 @@ static void test_dependencies_threads(SCtx* )
     free(shed);
 }
 
+
 TEST_BEGIN(test, main_setup, main_teardown, test_setup, test_teardown)
     TEST(create)
     TEST(test_assert)
     TEST(single_task)
+    TEST(test_yield)
+    TEST(test_blocked)
     TEST(test_sync)
     TEST(test_ready_order)
     TEST(test_dependency)
