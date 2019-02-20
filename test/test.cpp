@@ -852,6 +852,100 @@ static void test_dependencies_threads(SCtx* )
     free(shed);
 }
 
+struct MotherData {
+    MotherData()
+        : shed(0)
+        , task_id((bikeshed::TTaskID)-1)
+        , executed(0)
+        , sub_task_executed(0)
+    { }
+    static bikeshed::TaskResult Compute(bikeshed::HShed shed, bikeshed::TTaskID task_id, void* context_data)
+    {
+        MotherData* _this = (MotherData*)context_data;
+
+		_this->shed = shed;
+		_this->task_id = task_id;
+		
+		if (_this->sub_task_executed == 0)
+        {
+			_this->funcs[0] = (bikeshed::TaskFunc)TaskData::Compute;
+			_this->funcs[1] = (bikeshed::TaskFunc)TaskData::Compute;
+			_this->funcs[2] = (bikeshed::TaskFunc)TaskData::Compute;
+			_this->contexts[0] = &_this->tasks[0];
+			_this->contexts[1] = &_this->tasks[1];
+			_this->contexts[2] = &_this->tasks[2];
+			bikeshed::CreateTasks(shed, 3, &_this->funcs[0], &_this->contexts[0], &_this->task_ids[0]);
+			bikeshed::AddTaskDependencies(shed, task_id, 3, &_this->task_ids[0]);
+			bikeshed::ReadyTasks(shed, 3, &_this->task_ids[0]);
+            _this->sub_task_executed += 3;
+			return bikeshed::TASK_RESULT_YIELD;
+		}
+        else if (_this->sub_task_executed == 3)
+        {
+			_this->funcs[3] = (bikeshed::TaskFunc)TaskData::Compute;
+			_this->funcs[4] = (bikeshed::TaskFunc)TaskData::Compute;
+			_this->contexts[3] = &_this->tasks[3];
+			_this->contexts[4] = &_this->tasks[4];
+			bikeshed::CreateTasks(shed, 2, &_this->funcs[3], &_this->contexts[3], &_this->task_ids[3]);
+			bikeshed::AddTaskDependencies(shed, task_id, 2, &_this->task_ids[3]);
+			bikeshed::ReadyTasks(shed, 2, &_this->task_ids[3]);
+			_this->sub_task_executed += 2;
+			return bikeshed::TASK_RESULT_YIELD;
+		}
+        else if (_this->sub_task_executed == 5)
+        {
+			return bikeshed::TASK_RESULT_COMPLETE;
+		}
+        else
+        {
+            exit(-1);
+		}
+    }
+    bikeshed::HShed shed;
+    bikeshed::TTaskID task_id;
+    nadir::TAtomic32 executed;
+    uint32_t sub_task_executed;
+
+    TaskData tasks[5];
+    bikeshed::TaskFunc funcs[5];
+    void* contexts[5];
+    bikeshed::TTaskID task_ids[5];
+};
+
+static void test_in_execution_add_dependencies(SCtx* )
+{
+    AssertAbort fatal;
+
+    NadirLock sync_primitive;
+
+    nadir::TAtomic32 stop = 0;
+
+    bikeshed::TTaskID mother_task_id;
+	MotherData mother_task;
+    void* mother_context = &mother_task;
+    bikeshed::TaskFunc mother_func[1] = {(bikeshed::TaskFunc)MotherData::Compute};
+
+    bikeshed::HShed shed = bikeshed::CreateShed(malloc(bikeshed::GetShedSize(4, 3)), 4, 3, &sync_primitive.m_SyncPrimitive);
+    ASSERT_NE(0, shed);
+
+    ASSERT_TRUE(bikeshed::CreateTasks(shed, 1, mother_func, &mother_context, &mother_task_id));
+    bikeshed::ReadyTasks(shed, 1, &mother_task_id);
+
+    ASSERT_TRUE(bikeshed::ExecuteOneTask(shed, 0));	// Mother
+    ASSERT_TRUE(bikeshed::ExecuteOneTask(shed, 0));	// Mother::Task0
+    ASSERT_TRUE(bikeshed::ExecuteOneTask(shed, 0));	// Mother::Task1
+    ASSERT_TRUE(bikeshed::ExecuteOneTask(shed, 0));	// Mother::Task2
+    ASSERT_TRUE(bikeshed::ExecuteOneTask(shed, 0));	// Mother
+	ASSERT_TRUE(bikeshed::ExecuteOneTask(shed, 0));	// Mother::Task3
+	ASSERT_TRUE(bikeshed::ExecuteOneTask(shed, 0));	// Mother::Task4
+	ASSERT_TRUE(bikeshed::ExecuteOneTask(shed, 0));	// Mother
+
+    ASSERT_TRUE(!bikeshed::ExecuteOneTask(shed, 0));
+
+    ASSERT_EQ(0, stop);
+
+    free(shed);
+}
 
 TEST_BEGIN(test, main_setup, main_teardown, test_setup, test_teardown)
     TEST(create)
@@ -865,4 +959,5 @@ TEST_BEGIN(test, main_setup, main_teardown, test_setup, test_teardown)
     TEST(test_worker_thread)
     TEST(test_dependencies_thread)
     TEST(test_dependencies_threads)
+    TEST(test_in_execution_add_dependencies)
 TEST_END(test)
