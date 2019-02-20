@@ -329,12 +329,15 @@ void ExecuteAndResolveTask(HShed shed, TTaskID task_id, TTaskID* out_next_ready_
         }
         else if (task_result == TASK_RESULT_COMPLETE)
         {
-            SyncedResolveTask(shed, task_id, out_next_ready_task_id);
-            SyncedFreeTask(shed, task_id);
+			SyncedResolveTask(shed, task_id, out_next_ready_task_id);
+			SyncedFreeTask(shed, task_id);
         }
         else if (task_result == TASK_RESULT_YIELD)
         {
-            SyncedReadyTask(shed, task_id);
+			if (task->m_ChildDependencyCount == 0)
+			{
+				SyncedReadyTask(shed, task_id);
+			}
         }
 
         if (out_next_ready_task_id && *out_next_ready_task_id == 0)
