@@ -2,8 +2,7 @@
 
 #include <stdint.h>
 
-namespace bikeshed
-{
+namespace bikeshed {
 
 typedef void (*Assert)(const char* file, int line);
 void SetAssert(Assert assert_func);
@@ -20,15 +19,15 @@ typedef uint32_t TTaskID;
 
 enum TaskResult
 {
-    TASK_RESULT_COMPLETE,   // Task is complete, dependecies will be resolved and the tast is freed
-    TASK_RESULT_BLOCKED,    // Task is blocked, call ReadyTasks when ready to execute again
-    TASK_RESULT_YIELD       // Task is rescheduled to the end of the ready-queue
+    TASK_RESULT_COMPLETE, // Task is complete, dependecies will be resolved and the tast is freed
+    TASK_RESULT_BLOCKED,  // Task is blocked, call ReadyTasks when ready to execute again
+    TASK_RESULT_YIELD     // Task is rescheduled to the end of the ready-queue
 };
 
 typedef TaskResult (*TaskFunc)(HShed shed, TTaskID task_id, void* context_data);
 
 uint32_t GetShedSize(uint16_t max_task_count, uint16_t max_dependency_count);
-HShed CreateShed(void* mem, uint16_t max_task_count, uint16_t max_dependency_count, SyncPrimitive* sync_primitive);
+HShed    CreateShed(void* mem, uint16_t max_task_count, uint16_t max_dependency_count, SyncPrimitive* sync_primitive);
 
 bool CreateTasks(HShed shed, uint16_t task_count, TaskFunc* task_functions, void** task_context_data, TTaskID* out_task_ids);
 void ReadyTasks(HShed shed, uint16_t task_count, const TTaskID* task_ids);
@@ -37,4 +36,4 @@ bool AddTaskDependencies(HShed shed, TTaskID task_id, uint16_t task_count, const
 bool ExecuteOneTask(HShed shed, TTaskID* out_next_ready_task_id);
 void ExecuteAndResolveTask(HShed shed, TTaskID task_id, TTaskID* out_next_ready_task_id);
 
-}
+} // namespace bikeshed
