@@ -1,6 +1,7 @@
-[submodule "third-party/nadir"]
-	path = third-party/nadir
-	url = https://github.com/DanEngelbrecht/nadir.git
 [submodule "third-party/jctest"]
 	path = third-party/jctest
 	url = https://github.com/JCash/jctest
+[submodule "third-party/nadir"]
+	path = third-party/nadir
+	url = https://github.com/DanEngelbrecht/nadir.git
+
