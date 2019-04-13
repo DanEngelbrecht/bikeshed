@@ -93,7 +93,7 @@ TEST(Bikeshed, SingleTask)
 
     free(shed);
 }
-
+#if 0
 TEST(Bikeshed, Yield)
 {
     AssertAbort fatal;
@@ -116,7 +116,7 @@ TEST(Bikeshed, Yield)
             if (task_data->yield_count > 0)
             {
                 --task_data->yield_count;
-                return bikeshed::TASK_RESULT_YIELD;
+                return bikeshed::TASK_RESULT_BLOCKED;
             }
             task_data->shed    = shed;
             task_data->task_id = task_id;
@@ -170,6 +170,7 @@ TEST(Bikeshed, Yield)
 
     free(shed);
 }
+#endif // 0
 
 TEST(Bikeshed, Blocked)
 {
@@ -220,27 +221,7 @@ TEST(Bikeshed, Blocked)
     bikeshed::ReadyTasks(shed, 2, task_ids);
 
     ASSERT_TRUE(bikeshed::ExecuteOneTask(shed, 0));
-    ASSERT_EQ(0, tasks[0].blocked_count);
-    ASSERT_EQ(0, tasks[0].shed);
-    ASSERT_EQ((bikeshed::TTaskID)-1, tasks[0].task_id);
-    ASSERT_EQ(1u, tasks[0].executed);
-
-    ASSERT_EQ(0, tasks[1].blocked_count);
-    ASSERT_EQ(0, tasks[1].shed);
-    ASSERT_EQ((bikeshed::TTaskID)-1, tasks[1].task_id);
-    ASSERT_EQ(0u, tasks[1].executed);
-
     ASSERT_TRUE(bikeshed::ExecuteOneTask(shed, 0));
-    ASSERT_EQ(0, tasks[0].blocked_count);
-    ASSERT_EQ(0, tasks[0].shed);
-    ASSERT_EQ((bikeshed::TTaskID)-1, tasks[0].task_id);
-    ASSERT_EQ(1u, tasks[0].executed);
-
-    ASSERT_EQ(0, tasks[0].blocked_count);
-    ASSERT_EQ(shed, tasks[1].shed);
-    ASSERT_EQ(task_ids[1], tasks[1].task_id);
-    ASSERT_EQ(1u, tasks[1].executed);
-
     ASSERT_TRUE(!bikeshed::ExecuteOneTask(shed, 0));
     bikeshed::ReadyTasks(shed, 1, &task_ids[0]);
 
@@ -266,31 +247,19 @@ TEST(Bikeshed, Sync)
 
     struct FakeLock
     {
-        bikeshed::SyncPrimitive m_SyncPrimitive;
+        bikeshed::ReadyCallback m_ReadyCallback;
         FakeLock()
-            : m_SyncPrimitive { lock, unlock, signal }
-            , lock_count(0)
-            , unlock_count(0)
+            : m_ReadyCallback { signal }
             , ready_count(0)
         {
         }
-        static void lock(bikeshed::SyncPrimitive* primitive)
-        {
-            ((FakeLock*)primitive)->lock_count++;
-        }
-        static void unlock(bikeshed::SyncPrimitive* primitive)
-        {
-            ((FakeLock*)primitive)->unlock_count++;
-        }
-        static void signal(bikeshed::SyncPrimitive* primitive, uint32_t ready_count)
+        static void signal(bikeshed::ReadyCallback* primitive, uint32_t ready_count)
         {
             ((FakeLock*)primitive)->ready_count += ready_count;
         }
-        uint32_t lock_count;
-        uint32_t unlock_count;
         uint32_t ready_count;
     } lock;
-    bikeshed::HShed shed = bikeshed::CreateShed(malloc(bikeshed::GetShedSize(1, 0)), 1, 0, &lock.m_SyncPrimitive);
+    bikeshed::HShed shed = bikeshed::CreateShed(malloc(bikeshed::GetShedSize(1, 0)), 1, 0, &lock.m_ReadyCallback);
     ASSERT_NE((bikeshed::HShed)0, shed);
 
     struct TaskData
@@ -322,8 +291,6 @@ TEST(Bikeshed, Sync)
     ASSERT_TRUE(!bikeshed::CreateTasks(shed, 1, funcs, contexts, &task_id));
 
     bikeshed::ReadyTasks(shed, 1, &task_id);
-	ASSERT_EQ(1u, lock.lock_count);
-	ASSERT_EQ(1u, lock.unlock_count);
     ASSERT_EQ(1u, lock.ready_count);
 
     ASSERT_TRUE(bikeshed::ExecuteOneTask(shed, 0));
@@ -333,9 +300,7 @@ TEST(Bikeshed, Sync)
     ASSERT_EQ(1u, task.executed);
 
     ASSERT_TRUE(!bikeshed::ExecuteOneTask(shed, 0));
-
-    ASSERT_EQ(1u, lock.lock_count);
-    ASSERT_EQ(1u, lock.unlock_count);
+    ASSERT_EQ(1u, lock.ready_count);
 
     free(shed);
 }
@@ -523,10 +488,9 @@ struct NodeWorker
 
 struct NadirLock
 {
-    bikeshed::SyncPrimitive m_SyncPrimitive;
+    bikeshed::ReadyCallback m_ReadyCallback;
     NadirLock()
-        : m_SyncPrimitive { lock, unlock, signal }
-        , m_SpinLock(nadir::CreateSpinLock(malloc(nadir::GetSpinLockSize())))
+        : m_ReadyCallback { signal }
         , m_Lock(nadir::CreateLock(malloc(nadir::GetNonReentrantLockSize())))
         , m_ConditionVariable(nadir::CreateConditionVariable(malloc(nadir::GetConditionVariableSize()), m_Lock))
     {
@@ -537,20 +501,8 @@ struct NadirLock
         free(m_ConditionVariable);
         nadir::DeleteNonReentrantLock(m_Lock);
         free(m_Lock);
-        nadir::DeleteSpinLock(m_SpinLock);
-        free(m_SpinLock);
     }
-    static void lock(bikeshed::SyncPrimitive* primitive)
-    {
-        NadirLock* _this = (NadirLock*)primitive;
-        nadir::LockSpinLock(_this->m_SpinLock);
-    }
-    static void unlock(bikeshed::SyncPrimitive* primitive)
-    {
-        NadirLock* _this = (NadirLock*)primitive;
-        nadir::UnlockSpinLock(_this->m_SpinLock);
-    }
-    static void signal(bikeshed::SyncPrimitive* primitive, uint32_t ready_count)
+    static void signal(bikeshed::ReadyCallback* primitive, uint32_t ready_count)
     {
         NadirLock* _this = (NadirLock*)primitive;
         if (ready_count > 1)
@@ -562,7 +514,6 @@ struct NadirLock
             nadir::WakeOne(_this->m_ConditionVariable);
         }
     }
-    nadir::HSpinLock          m_SpinLock;
     nadir::HNonReentrantLock  m_Lock;
     nadir::HConditionVariable m_ConditionVariable;
 };
@@ -607,7 +558,7 @@ TEST(Bikeshed, WorkerThread)
     TaskData         task;
     task.done = &stop;
 
-    bikeshed::HShed shed = bikeshed::CreateShed(malloc(bikeshed::GetShedSize(1, 0)), 1, 0, &sync_primitive.m_SyncPrimitive);
+    bikeshed::HShed shed = bikeshed::CreateShed(malloc(bikeshed::GetShedSize(1, 0)), 1, 0, &sync_primitive.m_ReadyCallback);
     ASSERT_NE((bikeshed::HShed)0, shed);
 
     bikeshed::TaskFunc funcs[1]    = { TaskData::Compute };
@@ -665,7 +616,7 @@ TEST(Bikeshed, WorkerThreads)
     TaskData2         task;
     task.executed = &executed;
 
-    bikeshed::HShed shed = bikeshed::CreateShed(malloc(bikeshed::GetShedSize(65535, 0)), 65535, 0, &sync_primitive.m_SyncPrimitive);
+    bikeshed::HShed shed = bikeshed::CreateShed(malloc(bikeshed::GetShedSize(65535, 0)), 65535, 0, &sync_primitive.m_ReadyCallback);
     ASSERT_NE((bikeshed::HShed)0, shed);
 
     bikeshed::TaskFunc funcs[1]    = { TaskData2::Compute };
@@ -692,7 +643,7 @@ TEST(Bikeshed, WorkerThreads)
         nadir::Sleep(1000);
     }
 
-    sync_primitive.signal(&sync_primitive.m_SyncPrimitive, 5);
+    sync_primitive.signal(&sync_primitive.m_ReadyCallback, 5);
     nadir::AtomicAdd32(&stop, 1);
 
     nadir::JoinThread(thread_context[0].thread, nadir::TIMEOUT_INFINITE);
@@ -741,7 +692,7 @@ TEST(Bikeshed, DependenciesThread)
     };
     bikeshed::TTaskID task_ids[5];
 
-    bikeshed::HShed shed = bikeshed::CreateShed(malloc(bikeshed::GetShedSize(5, 5)), 5, 5, &sync_primitive.m_SyncPrimitive);
+    bikeshed::HShed shed = bikeshed::CreateShed(malloc(bikeshed::GetShedSize(5, 5)), 5, 5, &sync_primitive.m_ReadyCallback);
     ASSERT_NE((bikeshed::HShed)0, shed);
 
     ASSERT_TRUE(bikeshed::CreateTasks(shed, 5, funcs, contexts, task_ids));
@@ -806,7 +757,7 @@ TEST(Bikeshed, DependenciesThreads)
         contexts[task_index] = &tasks[task_index];
     }
 
-    bikeshed::HShed shed = bikeshed::CreateShed(malloc(bikeshed::GetShedSize(TASK_COUNT, DEPENDENCY_COUNT)), TASK_COUNT, DEPENDENCY_COUNT, &sync_primitive.m_SyncPrimitive);
+    bikeshed::HShed shed = bikeshed::CreateShed(malloc(bikeshed::GetShedSize(TASK_COUNT, DEPENDENCY_COUNT)), TASK_COUNT, DEPENDENCY_COUNT, &sync_primitive.m_ReadyCallback);
     ASSERT_NE((bikeshed::HShed)0, shed);
 
     for (uint16_t layer_index = 0; layer_index < LAYER_COUNT; ++layer_index)
@@ -892,9 +843,30 @@ struct MotherData
         : shed(0)
         , task_id((bikeshed::TTaskID)-1)
         , executed(0)
-        , sub_task_executed(0)
+        , sub_task_spawned(0)
+		, sub_task_executed(0)
+    { }
+
+    struct ChildData
     {
-    }
+        ChildData()
+            : mother_data(0)
+        { }
+
+        static bikeshed::TaskResult Compute(bikeshed::HShed shed, bikeshed::TTaskID , void* context_data)
+        {
+            ChildData* _this = (ChildData*)context_data;
+            _this->mother_data->sub_task_executed++;
+            --_this->mother_data->sub_task_spawned;
+            if (_this->mother_data->sub_task_spawned == 0)
+            {
+                bikeshed::ReadyTasks(shed, 1, &_this->mother_data->task_id);
+            }
+            return bikeshed::TASK_RESULT_COMPLETE;
+        }
+        MotherData*       mother_data;
+    };
+
     static bikeshed::TaskResult Compute(bikeshed::HShed shed, bikeshed::TTaskID task_id, void* context_data)
     {
         MotherData* _this = (MotherData*)context_data;
@@ -904,29 +876,34 @@ struct MotherData
 
         if (_this->sub_task_executed == 0)
         {
-            _this->funcs[0]    = (bikeshed::TaskFunc)TaskData::Compute;
-            _this->funcs[1]    = (bikeshed::TaskFunc)TaskData::Compute;
-            _this->funcs[2]    = (bikeshed::TaskFunc)TaskData::Compute;
-            _this->contexts[0] = &_this->tasks[0];
-            _this->contexts[1] = &_this->tasks[1];
-            _this->contexts[2] = &_this->tasks[2];
+            _this->funcs[0]    = (bikeshed::TaskFunc)ChildData::Compute;
+            _this->funcs[1]    = (bikeshed::TaskFunc)ChildData::Compute;
+            _this->funcs[2]    = (bikeshed::TaskFunc)ChildData::Compute;
+            _this->sub_tasks[0].mother_data = _this;
+            _this->sub_tasks[1].mother_data = _this;
+            _this->sub_tasks[2].mother_data = _this;
+            _this->contexts[0] = &_this->sub_tasks[0];
+            _this->contexts[1] = &_this->sub_tasks[1];
+            _this->contexts[2] = &_this->sub_tasks[2];
             bikeshed::CreateTasks(shed, 3, &_this->funcs[0], &_this->contexts[0], &_this->task_ids[0]);
-            bikeshed::AddTaskDependencies(shed, task_id, 3, &_this->task_ids[0]);
+
+            _this->sub_task_spawned += 3;
             bikeshed::ReadyTasks(shed, 3, &_this->task_ids[0]);
-            _this->sub_task_executed += 3;
-            return bikeshed::TASK_RESULT_YIELD;
+            return bikeshed::TASK_RESULT_BLOCKED;
         }
         else if (_this->sub_task_executed == 3)
         {
-            _this->funcs[3]    = (bikeshed::TaskFunc)TaskData::Compute;
-            _this->funcs[4]    = (bikeshed::TaskFunc)TaskData::Compute;
-            _this->contexts[3] = &_this->tasks[3];
-            _this->contexts[4] = &_this->tasks[4];
+            _this->funcs[3]    = (bikeshed::TaskFunc)ChildData::Compute;
+            _this->funcs[4]    = (bikeshed::TaskFunc)ChildData::Compute;
+            _this->sub_tasks[3].mother_data = _this;
+            _this->sub_tasks[4].mother_data = _this;
+            _this->contexts[3] = &_this->sub_tasks[3];
+            _this->contexts[4] = &_this->sub_tasks[4];
             bikeshed::CreateTasks(shed, 2, &_this->funcs[3], &_this->contexts[3], &_this->task_ids[3]);
-            bikeshed::AddTaskDependencies(shed, task_id, 2, &_this->task_ids[3]);
+
+            _this->sub_task_spawned += 2;
             bikeshed::ReadyTasks(shed, 2, &_this->task_ids[3]);
-            _this->sub_task_executed += 2;
-            return bikeshed::TASK_RESULT_YIELD;
+            return bikeshed::TASK_RESULT_BLOCKED;
         }
         else if (_this->sub_task_executed == 5)
         {
@@ -940,15 +917,16 @@ struct MotherData
     bikeshed::HShed   shed;
     bikeshed::TTaskID task_id;
     nadir::TAtomic32  executed;
+    uint32_t          sub_task_spawned;
     uint32_t          sub_task_executed;
 
-    TaskData           tasks[5];
+    ChildData          sub_tasks[5];
     bikeshed::TaskFunc funcs[5];
     void*              contexts[5];
     bikeshed::TTaskID  task_ids[5];
 };
 
-TEST(Bikeshed, InExecutionAddDependecies)
+TEST(Bikeshed, InExecutionSpawnTasks)
 {
     AssertAbort fatal;
 
@@ -961,19 +939,19 @@ TEST(Bikeshed, InExecutionAddDependecies)
     void*              mother_context = &mother_task;
     bikeshed::TaskFunc mother_func[1] = { (bikeshed::TaskFunc)MotherData::Compute };
 
-    bikeshed::HShed shed = bikeshed::CreateShed(malloc(bikeshed::GetShedSize(4, 3)), 4, 3, &sync_primitive.m_SyncPrimitive);
+    bikeshed::HShed shed = bikeshed::CreateShed(malloc(bikeshed::GetShedSize(4, 3)), 4, 3, &sync_primitive.m_ReadyCallback);
     ASSERT_NE((bikeshed::HShed)0, shed);
 
     ASSERT_TRUE(bikeshed::CreateTasks(shed, 1, mother_func, &mother_context, &mother_task_id));
     bikeshed::ReadyTasks(shed, 1, &mother_task_id);
 
     ASSERT_TRUE(bikeshed::ExecuteOneTask(shed, 0)); // Mother
-    ASSERT_TRUE(bikeshed::ExecuteOneTask(shed, 0)); // Mother::Task0
-    ASSERT_TRUE(bikeshed::ExecuteOneTask(shed, 0)); // Mother::Task1
-    ASSERT_TRUE(bikeshed::ExecuteOneTask(shed, 0)); // Mother::Task2
+    ASSERT_TRUE(bikeshed::ExecuteOneTask(shed, 0)); // Child[0]
+    ASSERT_TRUE(bikeshed::ExecuteOneTask(shed, 0)); // Child[1]
+    ASSERT_TRUE(bikeshed::ExecuteOneTask(shed, 0)); // Child[2]
     ASSERT_TRUE(bikeshed::ExecuteOneTask(shed, 0)); // Mother
-    ASSERT_TRUE(bikeshed::ExecuteOneTask(shed, 0)); // Mother::Task3
-    ASSERT_TRUE(bikeshed::ExecuteOneTask(shed, 0)); // Mother::Task4
+    ASSERT_TRUE(bikeshed::ExecuteOneTask(shed, 0)); // Child[3]
+    ASSERT_TRUE(bikeshed::ExecuteOneTask(shed, 0)); // Child[4]
     ASSERT_TRUE(bikeshed::ExecuteOneTask(shed, 0)); // Mother
 
     ASSERT_TRUE(!bikeshed::ExecuteOneTask(shed, 0));

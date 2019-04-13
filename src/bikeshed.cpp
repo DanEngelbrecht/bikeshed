@@ -152,28 +152,7 @@ struct Shed
     Pool                      m_DependencyIndexPool;
     Pool                      m_ReadyQueue;
     long volatile             m_TaskGeneration;
-    SyncPrimitive*            m_SyncPrimitive;
-};
-
-struct SyncPrimitiveScopedLock
-{
-    SyncPrimitiveScopedLock(SyncPrimitive* sync_primitive)
-        : m_SyncPrimitive(sync_primitive)
-    {
-        if (m_SyncPrimitive)
-        {
-            m_SyncPrimitive->AcquireLock(m_SyncPrimitive);
-        }
-    }
-    ~SyncPrimitiveScopedLock()
-    {
-        if (m_SyncPrimitive)
-        {
-            m_SyncPrimitive->ReleaseLock(m_SyncPrimitive);
-        }
-    }
-
-    SyncPrimitive* m_SyncPrimitive;
+    ReadyCallback*            m_ReadyCallback;
 };
 
 static void AsyncFreeTask(HShed shed, TTaskID task_id)
@@ -181,6 +160,8 @@ static void AsyncFreeTask(HShed shed, TTaskID task_id)
     TTaskIndex task_index = TASK_INDEX(task_id);
     Task*      task       = &shed->m_Tasks[task_index - 1];
     BIKESHED_FATAL_ASSERT(task_id == task->m_TaskID, return );
+    BIKESHED_FATAL_ASSERT(0 == task->m_ChildDependencyCount, return );
+
     task->m_TaskID                                   = 0;
     TDependencyIndex dependency_index                = task->m_FirstParentDependencyIndex;
     while (dependency_index != 0)
@@ -197,6 +178,7 @@ static void AsyncReadyTask(HShed shed, TTaskID task_id)
 {
     TTaskIndex task_index = TASK_INDEX(task_id);
     BIKESHED_FATAL_ASSERT(task_id == shed->m_Tasks[task_index - 1].m_TaskID, return);
+    BIKESHED_FATAL_ASSERT(0x20000000 == BIKESHED_ATOMICADD(&shed->m_Tasks[task_index - 1].m_ChildDependencyCount, 0x20000000), return);
 
     PoolPush(shed->m_ReadyQueue.m_Head, &shed->m_ReadyQueue.m_Generation, task_index);
 }
@@ -215,11 +197,11 @@ static void AsyncResolveTask(HShed shed, TTaskID task_id, TTaskID* out_next_read
         Task*       parent_task       = &shed->m_Tasks[parent_task_index - 1];
         TTaskID     parent_task_id    = TASK_ID(parent_task_index, TASK_GENERATION(parent_task->m_TaskID));
         long child_dependency_count   = BIKESHED_ATOMICADD(&parent_task->m_ChildDependencyCount, -1);
-        BIKESHED_FATAL_ASSERT(child_dependency_count >= 0, return );
         if (child_dependency_count == 0)
         {
             if (out_next_ready_task_id && *out_next_ready_task_id == 0)
             {
+                BIKESHED_FATAL_ASSERT(0x20000000 == BIKESHED_ATOMICADD(&parent_task->m_ChildDependencyCount, 0x20000000), return);
                 *out_next_ready_task_id = parent_task_id;
             }
             else
@@ -254,7 +236,7 @@ uint32_t GetShedSize(uint32_t max_task_count, uint32_t max_dependency_count)
     return size;
 }
 
-HShed CreateShed(void* mem, uint32_t max_task_count, uint32_t max_dependency_count, SyncPrimitive* sync_primitive)
+HShed CreateShed(void* mem, uint32_t max_task_count, uint32_t max_dependency_count, ReadyCallback* sync_primitive)
 {
     if (max_task_count !=  TASK_INDEX(max_task_count))
     {
@@ -275,7 +257,7 @@ HShed CreateShed(void* mem, uint32_t max_task_count, uint32_t max_dependency_cou
     shed->m_ReadyQueue.m_Head = (long volatile*)(void*)p;
     p += ALIGN_SIZE((sizeof(long volatile) * (1 + max_task_count)), 4);
 
-    shed->m_SyncPrimitive = sync_primitive;
+    shed->m_ReadyCallback = sync_primitive;
 
     PoolInitialize(shed->m_TaskIndexPool.m_Head, max_task_count);
     shed->m_TaskIndexPool.m_Generation = 0;
@@ -322,6 +304,7 @@ bool AddTaskDependencies(HShed shed, TTaskID task_id, uint32_t task_count, const
     TTaskIndex task_index = TASK_INDEX(task_id);
     Task*      task       = &shed->m_Tasks[task_index - 1];
     BIKESHED_FATAL_ASSERT(task_id == task->m_TaskID, return false);
+    BIKESHED_FATAL_ASSERT(0 == task->m_ChildDependencyCount, return false);
 
     for (uint32_t i = 0; i < task_count; ++i)
     {
@@ -349,6 +332,7 @@ bool AddTaskDependencies(HShed shed, TTaskID task_id, uint32_t task_count, const
         dependency_task->m_FirstParentDependencyIndex = dependency_index;
     }
     BIKESHED_ATOMICADD(&task->m_ChildDependencyCount, task_count);
+    BIKESHED_FATAL_ASSERT(task->m_ChildDependencyCount >= (long)task_count, return false);
 
     return true;
 }
@@ -366,16 +350,14 @@ void ReadyTasks(HShed shed, uint32_t task_count, const TTaskID* task_ids)
             TTaskID task_id = task_ids[--i];
             BIKESHED_FATAL_ASSERT(0 != shed->m_Tasks[TASK_INDEX(task_id) - 1].m_TaskFunc, return );
             BIKESHED_FATAL_ASSERT(task_id == shed->m_Tasks[TASK_INDEX(task_id) - 1].m_TaskID, return );
-            BIKESHED_FATAL_ASSERT(shed->m_Tasks[TASK_INDEX(task_id) - 1].m_ChildDependencyCount == 0, return );
             // TODO, we could be more efficient if we built the ready chain and just
             // inserted the head of the chain and pointed to the tail on the last readied task
             AsyncReadyTask(shed, task_id);
         } while(i > 0);
     }
-    if (shed->m_SyncPrimitive)
+    if (shed->m_ReadyCallback)
     {
-        SyncPrimitiveScopedLock lock(shed->m_SyncPrimitive);
-        shed->m_SyncPrimitive->SignalReady(shed->m_SyncPrimitive, task_count);
+        shed->m_ReadyCallback->SignalReady(shed->m_ReadyCallback, task_count);
     }
 }
 
@@ -391,27 +373,20 @@ void ExecuteAndResolveTask(HShed shed, TTaskID task_id, TTaskID* out_next_ready_
 
     TaskResult task_result = task->m_TaskFunc(shed, task_id, task->m_TaskContextData);
 
+    if (task_result == TASK_RESULT_COMPLETE)
     {
-        if (task_result == TASK_RESULT_BLOCKED)
-        {
-        }
-        else if (task_result == TASK_RESULT_COMPLETE)
-        {
-            AsyncResolveTask(shed, task_id, out_next_ready_task_id);
-            AsyncFreeTask(shed, task_id);
-        }
-        else if (task_result == TASK_RESULT_YIELD)
-        {
-            if (task->m_ChildDependencyCount == 0)
-            {
-                AsyncReadyTask(shed, task_id);
-            }
-        }
+        AsyncResolveTask(shed, task_id, out_next_ready_task_id);
+        BIKESHED_FATAL_ASSERT(0 == BIKESHED_ATOMICADD(&task->m_ChildDependencyCount, -0x20000000), return);
+        AsyncFreeTask(shed, task_id);
+    }
+    else if (task_result == TASK_RESULT_BLOCKED)
+    {
+        BIKESHED_FATAL_ASSERT(0 == BIKESHED_ATOMICADD(&task->m_ChildDependencyCount, -0x20000000), return);
+    }
 
-        if (out_next_ready_task_id && *out_next_ready_task_id == 0)
-        {
-            AsyncGetFirstReadyTask(shed, out_next_ready_task_id);
-        }
+    if (out_next_ready_task_id && *out_next_ready_task_id == 0)
+    {
+        AsyncGetFirstReadyTask(shed, out_next_ready_task_id);
     }
 }
 
