@@ -4,7 +4,7 @@
 
 # bikeshed
 Super simple work scheduler
-Builds with MSVC, Clang and GCC.
+Builds with MSVC, Clang and GCC, header only, C99 compliant, MIT license.
 
 ## Features
 - Generic tasks scheduling with dependecies between tasks
@@ -16,9 +16,10 @@ Builds with MSVC, Clang and GCC.
 - No memory allocations once shed is created
 - Minimal dependencies
 - Memory allocation and threading are users responsability
-  - Easy API for threading and syncronization provided
 - Lifetime of data associated with tasks is users responsability
 - Configurable and optional assert (fatal error) behavior
+- Configurable platform dependant functions with default implementation provided
+- Header only - define `BIKESHED_IMPLEMENTATION` in one compilation unit and include `bikeshed.h`
 
 ## Non-features
 - Cyclic dependency detection and resolving
@@ -28,8 +29,6 @@ Builds with MSVC, Clang and GCC.
 - Cancelling of tasks
 - Grouping of tasks
 - Tagging of tasks
-
-
 
 ## Dependencies
 Minimal dependecies with default overridable method for atomic operations.
