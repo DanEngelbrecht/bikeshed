@@ -4,6 +4,7 @@
 
 # bikeshed
 Super simple work scheduler
+Builds with MSVC, Clang and GCC.
 
 ## Features
 - Generic tasks scheduling with dependecies between tasks
@@ -13,8 +14,7 @@ Super simple work scheduler
   - Automatic free of tasks that has completed
 - A task can have many parents and many child dependecies
 - No memory allocations once shed is created
-- Tasks can yield and block
-- Only depends on one header - <stdint.h>
+- Minimal dependencies
 - Memory allocation and threading are users responsability
   - Easy API for threading and syncronization provided
 - Lifetime of data associated with tasks is users responsability
@@ -24,14 +24,26 @@ Super simple work scheduler
 - Cyclic dependency detection and resolving
   - API is designed to help user avoid cyclic dependecies but does not do any analisys
 - Built in threading or syncronization code - API to add it is available
-- Unlimited number of active tasks - currently limited to 65535 *active* tasks
+- Unlimited number of active tasks - currently limited to 8 388 607 *active* tasks
 - Cancelling of tasks
 - Grouping of tasks
 - Tagging of tasks
 
+
+
 ## Dependencies
-- Code dependencies
-    - <stdint.h>
-- Test code has dependencies added as git sub-modules
-    - https://github.com/DanEngelbrecht/jctest for unit test validation
-    - https://github.com/DanEngelbrecht/nadir for threading and syncronization
+Minimal dependecies with default overridable method for atomic operations.
+ - `<stdint.h>`
+ - `<stddef.h>`
+ - The default (optional) MSVC implementation depends on `<Windows.h>`.
+
+### Optional default methods
+The default implementations for the atomic functions can be overridden with your own implementation by overriding the macros:
+ - `BIKESHED_ATOMICADD` Atomically adds a 32-bit signed integer to another 32-bit signed integer and returns the result
+ - `BIKESHED_ATOMICCAS` Atomically exchange a 32-bit signed integer with another 32-bit signed integer if the value to be swapped matches the provided compare value, returns the old value.
+
+## Test code dependecies
+
+Test code has dependencies added as git sub-modules
+ - https://github.com/DanEngelbrecht/jctest for unit test validation
+ - https://github.com/DanEngelbrecht/nadir for threading and syncronization
