@@ -967,3 +967,117 @@ TEST(Bikeshed, InExecutionSpawnTasks)
     free(shed);
 }
 
+TEST(Bikeshed, ShedCopyState)
+{
+    AssertAbort fatal;
+
+    struct CounterTask
+    {
+        CounterTask()
+            : m_Counter(0)
+        {
+        }
+
+        static Bikeshed_TaskResult Execute(Bikeshed , Bikeshed_TaskID , void* context_data)
+        {
+            CounterTask* counter_task = (CounterTask*)context_data;
+            nadir::AtomicAdd32(&counter_task->m_Counter, 1);
+            return BIKESHED_TASK_RESULT_COMPLETE;
+        }
+        nadir::TAtomic32 m_Counter;
+    };
+
+    // Mother0
+    //  Mother0Child0
+    //    Mother0Child0Child0
+    //    Mother0Child0Child1
+    //  Mother0Child1
+    //    Mother0Child1Child0
+    //    Mother0Child1Child1
+    //    Mother0Child1Child2
+    // Mother1
+    // Mother2
+    // Mother3
+    //
+    //   Mother123Child0
+    //   Mother123Child1
+
+    // 13 tasks
+    // 13 dependencies
+
+    uint32_t shed_size = Bikeshed_GetSize(13, 13);
+
+    void* shed_master_mem = malloc(shed_size);
+    ASSERT_NE((void*)0, shed_master_mem);
+    void* shed_execute_mem = malloc(shed_size);
+    ASSERT_NE((void*)0, shed_master_mem);
+
+    NadirLock sync_primitive;
+
+    Bikeshed shed_master = Bikeshed_Create(shed_master_mem, 13, 13, &sync_primitive.m_ReadyCallback);
+    ASSERT_NE((Bikeshed)0, shed_master);
+
+    // Build graph
+
+    CounterTask mother[4];
+    Bikeshed_TaskID motherTaskId[4];
+    BikeShed_TaskFunc motherFunc[4] = {CounterTask::Execute, CounterTask::Execute, CounterTask::Execute, CounterTask::Execute};
+    void* motherContext[4] = {&mother[0], &mother[1], &mother[2], &mother[3]};
+
+    ASSERT_NE(0, Bikeshed_CreateTasks(shed_master, 4, motherFunc, motherContext, motherTaskId));
+
+    CounterTask mother0Child[2];
+    Bikeshed_TaskID mother0ChildTaskId[2];
+    BikeShed_TaskFunc mother0ChildFunc[2] = {CounterTask::Execute, CounterTask::Execute};
+    void* mother0ChildContext[2] = {&mother0Child[0], &mother0Child[1]};
+    ASSERT_NE(0, Bikeshed_CreateTasks(shed_master, 2, mother0ChildFunc, mother0ChildContext, mother0ChildTaskId));
+    ASSERT_NE(0, Bikeshed_AddDependencies(shed_master, motherTaskId[0], 2, mother0ChildTaskId));
+
+    CounterTask mother0Child0Child[2];
+    Bikeshed_TaskID mother0Child0ChildTaskId[2];
+    BikeShed_TaskFunc mother0Child0ChildFunc[2] = {CounterTask::Execute, CounterTask::Execute};
+    void* mother0Child0ChildContext[2] = {&mother0Child0Child[0], &mother0Child0Child[1]};
+    ASSERT_NE(0, Bikeshed_CreateTasks(shed_master, 2, mother0Child0ChildFunc, mother0Child0ChildContext, mother0Child0ChildTaskId));
+    ASSERT_NE(0, Bikeshed_AddDependencies(shed_master, mother0ChildTaskId[0], 2, mother0Child0ChildTaskId));
+
+    CounterTask mother0Child1Child[3];
+    Bikeshed_TaskID mother0Child1ChildTaskId[3];
+    BikeShed_TaskFunc mother0Child1ChildFunc[3] = {CounterTask::Execute, CounterTask::Execute, CounterTask::Execute};
+    void* mother0Child1ChildContext[3] = {&mother0Child1Child[0], &mother0Child1Child[1], &mother0Child1Child[2]};
+    ASSERT_NE(0, Bikeshed_CreateTasks(shed_master, 3, mother0Child1ChildFunc, mother0Child1ChildContext, mother0Child1ChildTaskId));
+    ASSERT_NE(0, Bikeshed_AddDependencies(shed_master, mother0ChildTaskId[1], 3, mother0Child1ChildTaskId));
+
+    CounterTask mother123Child[2];
+    Bikeshed_TaskID mother123ChildTaskId[2];
+    BikeShed_TaskFunc mother123ChildFunc[2] = {CounterTask::Execute, CounterTask::Execute};
+    void* mother123ChildContext[2] = {&mother123Child[0], &mother123Child[1]};
+    ASSERT_NE(0, Bikeshed_CreateTasks(shed_master, 2, mother123ChildFunc, mother123ChildContext, mother123ChildTaskId));
+
+    ASSERT_NE(0, Bikeshed_AddDependencies(shed_master, motherTaskId[1], 2, mother123ChildTaskId));
+    ASSERT_NE(0, Bikeshed_AddDependencies(shed_master, motherTaskId[2], 2, mother123ChildTaskId));
+    ASSERT_NE(0, Bikeshed_AddDependencies(shed_master, motherTaskId[3], 2, mother123ChildTaskId));
+
+    Bikeshed_ReadyTasks(shed_master, 2, mother0Child0ChildTaskId);
+    Bikeshed_ReadyTasks(shed_master, 3, mother0Child1ChildTaskId);
+    Bikeshed_ReadyTasks(shed_master, 2, mother123ChildTaskId);
+
+    // Copy state for execution
+    Bikeshed shed_execute = Bikeshed_CloneState(shed_execute_mem, shed_master, shed_size);
+    while (Bikeshed_ExecuteOne(shed_execute, 0));
+
+    // Do it twice
+    shed_execute = Bikeshed_CloneState(shed_execute_mem, shed_master, shed_size);
+    while (Bikeshed_ExecuteOne(shed_execute, 0));
+
+    // Do it three times
+    shed_execute = Bikeshed_CloneState(shed_execute_mem, shed_master, shed_size);
+    while (Bikeshed_ExecuteOne(shed_execute, 0));
+
+    ASSERT_EQ(3, mother[0].m_Counter);
+    ASSERT_EQ(3, mother[1].m_Counter);
+    ASSERT_EQ(3, mother[2].m_Counter);
+    ASSERT_EQ(3, mother[3].m_Counter);
+
+    free(shed_master);
+    free(shed_execute);
+}
