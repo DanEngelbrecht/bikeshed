@@ -16,14 +16,14 @@ static void Assert(const char*, int)
 TEST(Bikeshed, Assert)
 {
     Bikeshed_SetAssert(Assert);
-    Bikeshed shed = Bikeshed_Create(malloc(Bikeshed_GetSize(1, 0)), 1, 0, 0);
+    char mem[BIKESHED_SIZE(1, 0)];
+    Bikeshed shed = Bikeshed_Create(mem, 1, 0, 0);
     ASSERT_NE((Bikeshed)0, shed);
 #if defined(BIKESHED_ASSERTS)
     Bikeshed_TaskID invalid_task_id = 1;
     Bikeshed_ReadyTasks(shed, 1, &invalid_task_id);
     ASSERT_EQ(1u, gAssertCount);
 #endif
-    free(shed);
     Bikeshed_SetAssert(0);
 }
 
@@ -48,7 +48,8 @@ TEST(Bikeshed, SingleTask)
 {
     AssertAbort fatal;
 
-    Bikeshed shed = Bikeshed_Create(malloc(Bikeshed_GetSize(1, 0)), 1, 0, 0);
+    char mem[BIKESHED_SIZE(1, 0)];
+    Bikeshed shed = Bikeshed_Create(mem, 1, 0, 0);
     ASSERT_NE((Bikeshed)0, shed);
 
     struct TaskData
@@ -72,7 +73,7 @@ TEST(Bikeshed, SingleTask)
         uint32_t    executed;
     } task;
 
-    ASSERT_TRUE(!Bikeshed_ExecuteOne(shed, 0));
+    ASSERT_TRUE(!Bikeshed_ExecuteOne(shed));
 
     BikeShed_TaskFunc task_functions[1] = {TaskData::Compute};
     void* task_contexts[1] = {&task};
@@ -84,101 +85,21 @@ TEST(Bikeshed, SingleTask)
 
     Bikeshed_ReadyTasks(shed, 1, &task_id);
 
-    ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 0));
+    ASSERT_TRUE(Bikeshed_ExecuteOne(shed));
 
     ASSERT_EQ(shed, task.shed);
     ASSERT_EQ(task.task_id, task_id);
     ASSERT_EQ(1u, task.executed);
 
-    ASSERT_TRUE(!Bikeshed_ExecuteOne(shed, 0));
-
-    free(shed);
+    ASSERT_TRUE(!Bikeshed_ExecuteOne(shed));
 }
-
-#if 0
-TEST(Bikeshed, Yield)
-{
-    AssertAbort fatal;
-
-    Bikeshed shed = Bikeshed_Create(malloc(Bikeshed_GetSize(2, 0)), 2, 0, 0x0);
-    ASSERT_NE((Bikeshed)0, shed);
-
-    struct TaskData
-    {
-        TaskData()
-            : shed(0)
-            , task_id((Bikeshed_TaskID)-1)
-            , yield_count(0)
-            , executed(0)
-        {
-        }
-        static Bikeshed_TaskResult Compute(Bikeshed shed, Bikeshed_TaskID task_id, TaskData* task_data)
-        {
-            ++task_data->executed;
-            if (task_data->yield_count > 0)
-            {
-                --task_data->yield_count;
-                return BIKESHED_TASK_RESULT_BLOCKED;
-            }
-            task_data->shed    = shed;
-            task_data->task_id = task_id;
-            return BIKESHED_TASK_RESULT_COMPLETE;
-        }
-        Bikeshed   shed;
-        Bikeshed_TaskID task_id;
-        uint8_t           yield_count;
-        uint32_t          executed;
-    };
-
-    TaskData tasks[2];
-    tasks[0].yield_count = 1;
-
-    BikeShed_TaskFunc funcs[2] = {
-        (BikeShed_TaskFunc)TaskData::Compute,
-        (BikeShed_TaskFunc)TaskData::Compute
-    };
-    void* contexts[2] = { &tasks[0], &tasks[1] };
-
-    Bikeshed_TaskID task_ids[2];
-    ASSERT_TRUE(Bikeshed_CreateTasks(shed, 2, funcs, contexts, task_ids));
-
-    Bikeshed_ReadyTasks(shed, 2, task_ids);
-
-    ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 0));
-    ASSERT_EQ(0, tasks[0].yield_count);
-    ASSERT_EQ(0, tasks[0].shed);
-    ASSERT_EQ((Bikeshed_TaskID)-1, tasks[0].task_id);
-    ASSERT_EQ(1u, tasks[0].executed);
-
-    ASSERT_EQ(0, tasks[1].yield_count);
-    ASSERT_EQ(0, tasks[1].shed);
-    ASSERT_EQ((Bikeshed_TaskID)-1, tasks[1].task_id);
-    ASSERT_EQ(0u, tasks[1].executed);
-
-    ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 0));
-    ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 0));
-
-    ASSERT_TRUE(!Bikeshed_ExecuteOne(shed, 0));
-
-    ASSERT_EQ(0, tasks[0].yield_count);
-    ASSERT_EQ(shed, tasks[0].shed);
-    ASSERT_EQ(task_ids[0], tasks[0].task_id);
-    ASSERT_EQ(2u, tasks[0].executed);
-
-    ASSERT_EQ(0, tasks[1].yield_count);
-    ASSERT_EQ(shed, tasks[1].shed);
-    ASSERT_EQ(task_ids[1], tasks[1].task_id);
-    ASSERT_EQ(1u, tasks[1].executed);
-
-    free(shed);
-}
-#endif // 0
 
 TEST(Bikeshed, Blocked)
 {
     AssertAbort fatal;
 
-    Bikeshed shed = Bikeshed_Create(malloc(Bikeshed_GetSize(2, 0)), 2, 0, 0x0);
+    char mem[BIKESHED_SIZE(2, 0)];
+    Bikeshed shed = Bikeshed_Create(mem, 2, 0, 0x0);
     ASSERT_NE((Bikeshed)0, shed);
 
     struct TaskData
@@ -226,12 +147,12 @@ TEST(Bikeshed, Blocked)
 
     Bikeshed_ReadyTasks(shed, 2, task_ids);
 
-    ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 0));
-    ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 0));
-    ASSERT_TRUE(!Bikeshed_ExecuteOne(shed, 0));
+    ASSERT_TRUE(Bikeshed_ExecuteOne(shed));
+    ASSERT_TRUE(Bikeshed_ExecuteOne(shed));
+    ASSERT_TRUE(!Bikeshed_ExecuteOne(shed));
     Bikeshed_ReadyTasks(shed, 1, &task_ids[0]);
 
-    ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 0));
+    ASSERT_TRUE(Bikeshed_ExecuteOne(shed));
     ASSERT_EQ(0, tasks[0].blocked_count);
     ASSERT_EQ(shed, tasks[0].shed);
     ASSERT_EQ(task_ids[0], tasks[0].task_id);
@@ -242,9 +163,7 @@ TEST(Bikeshed, Blocked)
     ASSERT_EQ(task_ids[1], tasks[1].task_id);
     ASSERT_EQ(1u, tasks[1].executed);
 
-    ASSERT_TRUE(!Bikeshed_ExecuteOne(shed, 0));
-
-    free(shed);
+    ASSERT_TRUE(!Bikeshed_ExecuteOne(shed));
 }
 
 TEST(Bikeshed, Sync)
@@ -265,7 +184,8 @@ TEST(Bikeshed, Sync)
         }
         uint32_t ready_count;
     } lock;
-    Bikeshed shed = Bikeshed_Create(malloc(Bikeshed_GetSize(1, 0)), 1, 0, &lock.m_ReadyCallback);
+    char mem[BIKESHED_SIZE(1, 0)];
+    Bikeshed shed = Bikeshed_Create(mem, 1, 0, &lock.m_ReadyCallback);
     ASSERT_NE((Bikeshed)0, shed);
 
     struct TaskData
@@ -299,23 +219,22 @@ TEST(Bikeshed, Sync)
     Bikeshed_ReadyTasks(shed, 1, &task_id);
     ASSERT_EQ(1u, lock.ready_count);
 
-    ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 0));
+    ASSERT_TRUE(Bikeshed_ExecuteOne(shed));
 
     ASSERT_EQ(shed, task.shed);
     ASSERT_EQ(task.task_id, task_id);
     ASSERT_EQ(1u, task.executed);
 
-    ASSERT_TRUE(!Bikeshed_ExecuteOne(shed, 0));
+    ASSERT_TRUE(!Bikeshed_ExecuteOne(shed));
     ASSERT_EQ(1u, lock.ready_count);
-
-    free(shed);
 }
 
 TEST(Bikeshed, ReadyOrder)
 {
     AssertAbort fatal;
 
-    Bikeshed shed = Bikeshed_Create(malloc(Bikeshed_GetSize(5, 4)), 5, 4, 0);
+    char mem[BIKESHED_SIZE(5, 4)];
+    Bikeshed shed = Bikeshed_Create(mem, 5, 4, 0);
     ASSERT_NE((Bikeshed)0, shed);
 
     struct TaskData
@@ -360,20 +279,20 @@ TEST(Bikeshed, ReadyOrder)
 
     for (uint32_t i = 0; i < 5; ++i)
     {
-        ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 0));
+        ASSERT_TRUE(Bikeshed_ExecuteOne(shed));
         ASSERT_EQ(task_ids[i], tasks[i].task_id);
         ASSERT_EQ(shed, tasks[i].shed);
         ASSERT_EQ(1u, tasks[i].executed);
     }
-    ASSERT_TRUE(!Bikeshed_ExecuteOne(shed, 0));
-    free(shed);
+    ASSERT_TRUE(!Bikeshed_ExecuteOne(shed));
 }
 
 TEST(Bikeshed, Dependency)
 {
     AssertAbort fatal;
 
-    Bikeshed shed = Bikeshed_Create(malloc(Bikeshed_GetSize(5, 5)), 5, 5, 0);
+    char mem[BIKESHED_SIZE(5, 5)];
+    Bikeshed shed = Bikeshed_Create(mem, 5, 5, 0);
     ASSERT_NE((Bikeshed)0, shed);
 
     struct TaskData
@@ -422,9 +341,9 @@ TEST(Bikeshed, Dependency)
 
     for (uint32_t i = 0; i < 5; ++i)
     {
-        ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 0));
+        ASSERT_TRUE(Bikeshed_ExecuteOne(shed));
     }
-    ASSERT_FALSE(Bikeshed_ExecuteOne(shed, 0));
+    ASSERT_FALSE(Bikeshed_ExecuteOne(shed));
 
     for (uint32_t i = 0; i < 5; ++i)
     {
@@ -433,8 +352,7 @@ TEST(Bikeshed, Dependency)
         ASSERT_EQ(1u, tasks[i].executed);
     }
 
-    ASSERT_TRUE(!Bikeshed_ExecuteOne(shed, 0));
-    free(shed);
+    ASSERT_TRUE(!Bikeshed_ExecuteOne(shed));
 }
 
 struct NodeWorker
@@ -470,15 +388,9 @@ struct NodeWorker
     {
         NodeWorker* _this = (NodeWorker*)context;
 
-        Bikeshed_TaskID next_ready_task = 0;
         while (*_this->stop == 0)
         {
-            if (next_ready_task != 0)
-            {
-                Bikeshed_ExecuteAndResolve(_this->shed, next_ready_task, &next_ready_task);
-                continue;
-            }
-            if (!Bikeshed_ExecuteOne(_this->shed, &next_ready_task))
+            if (!Bikeshed_ExecuteOne(_this->shed))
             {
                 nadir::SleepConditionVariable(_this->condition_variable, 1000);
             }
@@ -564,7 +476,8 @@ TEST(Bikeshed, WorkerThread)
     TaskData         task;
     task.done = &stop;
 
-    Bikeshed shed = Bikeshed_Create(malloc(Bikeshed_GetSize(1, 0)), 1, 0, &sync_primitive.m_ReadyCallback);
+    char mem[BIKESHED_SIZE(1, 0)];
+    Bikeshed shed = Bikeshed_Create(mem, 1, 0, &sync_primitive.m_ReadyCallback);
     ASSERT_NE((Bikeshed)0, shed);
 
     BikeShed_TaskFunc funcs[1]    = { TaskData::Compute };
@@ -584,9 +497,7 @@ TEST(Bikeshed, WorkerThread)
     ASSERT_EQ(task_id, task.task_id);
     ASSERT_EQ(1, task.executed);
 
-    ASSERT_FALSE(Bikeshed_ExecuteOne(shed, 0));
-
-    free(shed);
+    ASSERT_FALSE(Bikeshed_ExecuteOne(shed));
 }
 
 struct TaskData2
@@ -622,7 +533,7 @@ TEST(Bikeshed, WorkerThreads)
     TaskData2         task;
     task.executed = &executed;
 
-    Bikeshed shed = Bikeshed_Create(malloc(Bikeshed_GetSize(65535, 0)), 65535, 0, &sync_primitive.m_ReadyCallback);
+    Bikeshed shed = Bikeshed_Create(malloc(BIKESHED_SIZE(65535, 0)), 65535, 0, &sync_primitive.m_ReadyCallback);
     ASSERT_NE((Bikeshed)0, shed);
 
     BikeShed_TaskFunc funcs[1]    = { TaskData2::Compute };
@@ -667,7 +578,7 @@ TEST(Bikeshed, WorkerThreads)
     ASSERT_EQ(shed, task.shed);
     ASSERT_EQ(65535, executed);
 
-    ASSERT_TRUE(!Bikeshed_ExecuteOne(shed, 0));
+    ASSERT_TRUE(!Bikeshed_ExecuteOne(shed));
 
     free(shed);
 }
@@ -698,7 +609,8 @@ TEST(Bikeshed, DependenciesThread)
     };
     Bikeshed_TaskID task_ids[5];
 
-    Bikeshed shed = Bikeshed_Create(malloc(Bikeshed_GetSize(5, 5)), 5, 5, &sync_primitive.m_ReadyCallback);
+    char mem[BIKESHED_SIZE(5, 5)];
+    Bikeshed shed = Bikeshed_Create(mem, 5, 5, &sync_primitive.m_ReadyCallback);
     ASSERT_NE((Bikeshed)0, shed);
 
     ASSERT_TRUE(Bikeshed_CreateTasks(shed, 5, funcs, contexts, task_ids));
@@ -721,9 +633,7 @@ TEST(Bikeshed, DependenciesThread)
         ASSERT_EQ(1, tasks[i].executed);
     }
 
-    ASSERT_TRUE(!Bikeshed_ExecuteOne(shed, 0));
-
-    free(shed);
+    ASSERT_TRUE(!Bikeshed_ExecuteOne(shed));
 }
 
 TEST(Bikeshed, DependenciesThreads)
@@ -763,7 +673,7 @@ TEST(Bikeshed, DependenciesThreads)
         contexts[task_index] = &tasks[task_index];
     }
 
-    Bikeshed shed = Bikeshed_Create(malloc(Bikeshed_GetSize(TASK_COUNT, DEPENDENCY_COUNT)), TASK_COUNT, DEPENDENCY_COUNT, &sync_primitive.m_ReadyCallback);
+    Bikeshed shed = Bikeshed_Create(malloc(BIKESHED_SIZE(TASK_COUNT, DEPENDENCY_COUNT)), TASK_COUNT, DEPENDENCY_COUNT, &sync_primitive.m_ReadyCallback);
     ASSERT_NE((Bikeshed)0, shed);
 
     for (uint16_t layer_index = 0; layer_index < LAYER_COUNT; ++layer_index)
@@ -796,15 +706,9 @@ TEST(Bikeshed, DependenciesThreads)
     Bikeshed_ReadyTasks(shed, LAYER_TASK_COUNT[2] - LAYER_TASK_COUNT[3], &task_ids[LAYER_TASK_OFFSET[2] + LAYER_TASK_COUNT[3]]);
     Bikeshed_ReadyTasks(shed, LAYER_TASK_COUNT[1] - LAYER_TASK_COUNT[2], &task_ids[LAYER_TASK_OFFSET[1] + LAYER_TASK_COUNT[2]]);
 
-    Bikeshed_TaskID next_ready_task = 0;
     while (!done)
     {
-        if (next_ready_task != 0)
-        {
-            Bikeshed_ExecuteAndResolve(shed, next_ready_task, &next_ready_task);
-            continue;
-        }
-        if (!Bikeshed_ExecuteOne(shed, &next_ready_task))
+        if (!Bikeshed_ExecuteOne(shed))
         {
             // We can't wait for the signal here since it only signals if there is work to be done
             // Ie, if another thread executes the last work item that sets done to true we will
@@ -838,7 +742,7 @@ TEST(Bikeshed, DependenciesThreads)
         ASSERT_EQ(1, tasks[i].executed);
     }
 
-    ASSERT_TRUE(!Bikeshed_ExecuteOne(shed, 0));
+    ASSERT_TRUE(!Bikeshed_ExecuteOne(shed));
 
     free(shed);
 }
@@ -945,26 +849,25 @@ TEST(Bikeshed, InExecutionSpawnTasks)
     void*              mother_context = &mother_task;
     BikeShed_TaskFunc mother_func[1] = { (BikeShed_TaskFunc)MotherData::Compute };
 
-    Bikeshed shed = Bikeshed_Create(malloc(Bikeshed_GetSize(4, 3)), 4, 3, &sync_primitive.m_ReadyCallback);
+    char mem[BIKESHED_SIZE(4, 3)];
+    Bikeshed shed = Bikeshed_Create(mem, 4, 3, &sync_primitive.m_ReadyCallback);
     ASSERT_NE((Bikeshed)0, shed);
 
     ASSERT_TRUE(Bikeshed_CreateTasks(shed, 1, mother_func, &mother_context, &mother_task_id));
     Bikeshed_ReadyTasks(shed, 1, &mother_task_id);
 
-    ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 0)); // Mother
-    ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 0)); // Child[0]
-    ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 0)); // Child[1]
-    ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 0)); // Child[2]
-    ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 0)); // Mother
-    ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 0)); // Child[3]
-    ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 0)); // Child[4]
-    ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 0)); // Mother
+    ASSERT_TRUE(Bikeshed_ExecuteOne(shed)); // Mother
+    ASSERT_TRUE(Bikeshed_ExecuteOne(shed)); // Child[0]
+    ASSERT_TRUE(Bikeshed_ExecuteOne(shed)); // Child[1]
+    ASSERT_TRUE(Bikeshed_ExecuteOne(shed)); // Child[2]
+    ASSERT_TRUE(Bikeshed_ExecuteOne(shed)); // Mother
+    ASSERT_TRUE(Bikeshed_ExecuteOne(shed)); // Child[3]
+    ASSERT_TRUE(Bikeshed_ExecuteOne(shed)); // Child[4]
+    ASSERT_TRUE(Bikeshed_ExecuteOne(shed)); // Mother
 
-    ASSERT_TRUE(!Bikeshed_ExecuteOne(shed, 0));
+    ASSERT_TRUE(!Bikeshed_ExecuteOne(shed));
 
     ASSERT_EQ(0, stop);
-
-    free(shed);
 }
 
 TEST(Bikeshed, ShedCopyState)
@@ -1005,7 +908,7 @@ TEST(Bikeshed, ShedCopyState)
     // 13 tasks
     // 13 dependencies
 
-    uint32_t shed_size = Bikeshed_GetSize(13, 13);
+    uint32_t shed_size = BIKESHED_SIZE(13, 13);
 
     void* shed_master_mem = malloc(shed_size);
     ASSERT_NE((void*)0, shed_master_mem);
@@ -1063,15 +966,15 @@ TEST(Bikeshed, ShedCopyState)
 
     // Copy state for execution
     Bikeshed shed_execute = Bikeshed_CloneState(shed_execute_mem, shed_master, shed_size);
-    while (Bikeshed_ExecuteOne(shed_execute, 0));
+    while (Bikeshed_ExecuteOne(shed_execute));
 
     // Do it twice
     shed_execute = Bikeshed_CloneState(shed_execute_mem, shed_master, shed_size);
-    while (Bikeshed_ExecuteOne(shed_execute, 0));
+    while (Bikeshed_ExecuteOne(shed_execute));
 
     // Do it three times
     shed_execute = Bikeshed_CloneState(shed_execute_mem, shed_master, shed_size);
-    while (Bikeshed_ExecuteOne(shed_execute, 0));
+    while (Bikeshed_ExecuteOne(shed_execute));
 
     ASSERT_EQ(3, mother[0].m_Counter);
     ASSERT_EQ(3, mother[1].m_Counter);
