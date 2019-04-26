@@ -1,4 +1,79 @@
-#pragma once
+#ifndef BIKESHED_INCLUDEGUARD_PRIVATE_H
+#define BIKESHED_INCLUDEGUARD_PRIVATE_H
+
+/*
+bikeshed.h - public domain - Dan Engelbrecht @DanEngelbrecht, 2019
+
+# BIKESHED
+
+Lock free hierarchical work scheduler, builds with MSVC, Clang and GCC, header only, C99 compliant, MIT license.
+
+See github for latest version: https://github.com/DanEngelbrecht/bikeshed
+
+## Usage
+In *ONE* source file, put:
+
+```C
+#define BIKESHED_IMPLEMENTATION
+// Define any overrides of platform specific implementations before including bikeshed.h.
+#include "bikeshed.h"
+```
+
+Other source files should just #include "bikeshed.h"
+
+## Macros
+
+BIKESHED_IMPLEMENTATION
+Define in one compilation unit to include implementation.
+
+BIKESHED_ASSERTS
+Define if you want Bikeshed to validate API usage.
+
+BIKESHED_ATOMICADD
+Macro for platform specific implementation of an atomic addition. Returns the result of the operation.
+#define BIKESHED_ATOMICADD(value, amount) return MyAtomicAdd(value, amount)
+
+BIKESHED_ATOMICCAS
+Macro for platform specific implementation of an atomic compare and swap. Returns the previous value of "store".
+#define BIKESHED_ATOMICCAS(store, compare, value) return MyAtomicCAS(store, compare, value);
+
+## Notes
+Macros, typedefs, structs and functions suffixed with "_private" are internal and subject to change.
+
+## Dependencies
+Standard C library headers:
+#include <stdint.h>
+#include <string.h>
+
+If either BIKESHED_ATOMICADD or BIKESHED_ATOMICCAS is not defined the MSVC/Windows implementation will
+include <Windows.h> to get access to _InterlockedExchangeAdd and _InterlockedCompareExchange respectively.
+
+The GCC/clang implementation relies on the compiler intrisics __sync_fetch_and_add and __sync_val_compare_and_swap.
+
+## License
+
+MIT License
+
+Copyright (c) 2019 Dan Engelbrecht
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
 
 #include <stdint.h>
 #include <string.h>
@@ -7,23 +82,67 @@
 extern "C" {
 #endif // __cplusplus
 
+// Custom assert hook
+// If BIKESHED_ASSERTS is defined, Bikeshed will validate input parameters to make sure
+// correct API usage.
+// The callback will be called if an API error is detected and the library function will bail.
+//
+// Warning: If an API function asserts the state of the Bikeshed might be compromised.
+// To reset the assert callback call Bikeshed_SetAssert(0);
 typedef void (*Bikeshed_Assert)(const char* expression, const char* file, int line);
 void Bikeshed_SetAssert(Bikeshed_Assert assert_func);
 
+// Bikeshed handle
 typedef struct Bikeshed_Shed_private* Bikeshed;
+
+// Callback instance and hook for the library user to implement.
+// Called when one or more tasks are "readied" - either by a call to Bikeshed_ReadyTasks or if
+// a task has been resolved due to all dependencies have finished.
+//
+// struct MyReadyCallback {
+//      // Add the Bikeshed_ReadyCallback struct *first* in your struct
+//      struct Bikeshed_ReadyCallback cb = {MyReadyCallback::Ready};
+//      // Add any custom data here
+//      static Ready(struct Bikeshed_ReadyCallback* ready_callback, uint32_t ready_count)
+//      {
+//          MyReadyCallback* _this = (MyReadyCallback*)ready_callback;
+//          // Your code goes here
+//      }
+// };
+// MyReadyCallback myCallback;
+// bikeshed = CreateBikeshed(mem, max_task_count, max_dependency_count, channel_count, &myCallback);
+//
+// The Bikeshed_ReadyCallback instance must have a lifetime that starts before and ends after the Bikeshed instance.
 struct Bikeshed_ReadyCallback
 {
     void (*SignalReady)(struct Bikeshed_ReadyCallback* ready_callback, uint32_t ready_count);
 };
 
+// Task identifier
 typedef uint32_t Bikeshed_TaskID;
 
+// Result codes for task execution
 enum Bikeshed_TaskResult
 {
     BIKESHED_TASK_RESULT_COMPLETE, // Task is complete, dependecies will be resolved and the task is freed
     BIKESHED_TASK_RESULT_BLOCKED   // Task is blocked, call ReadyTasks on the task id when ready to execute again
 };
 
+// Task execution callback
+// A task execution function may:
+//  - Create new tasks
+//  - Add new dependencies to tasks that are not "Ready" or "Executing"
+//  - Ready other tasks that are not "Ready" or "Executing"
+//  - Deallocate any memory associated with the context
+//
+// A task execution function may not:
+//  - Add dependencies to the executing task
+//  - Ready the executing task
+//
+// A task execution function should not:
+//  - Block, if the function blocks the thread that called Bikeshed_ExecuteOne will block, return BIKESHED_TASK_RESULT_BLOCKED instead
+//  - Call Bikeshed_ExecuteOne, this works but makes little sense
+//  - Destroy the Bikeshed instance
 typedef enum Bikeshed_TaskResult (*BikeShed_TaskFunc)(Bikeshed shed, Bikeshed_TaskID task_id, uint8_t channel, void* context);
 
 typedef uint32_t Bikeshed_TaskIndex_private;
@@ -61,7 +180,12 @@ struct Bikeshed_Shed_private
     long volatile                       m_ReadyGeneration;
 };
 
-// Up to 8 388 607 tasks
+// Calculates the memory needed for a Bikeshed instance
+// BIKESHED_SIZE is a macro which allows the Bikeshed to be allocated on the stack without heap allocations
+//
+// max_task_count: 1 to 8 388 607 tasks
+// max_dependency_count: 0 to 8 388 607 dependencies
+// channel_count: 1 to 255 channels
 #define BIKESHED_SIZE(max_task_count, max_dependency_count, channel_count) \
         ((uint32_t)BIKESHED_ALIGN_SIZE_PRIVATE(sizeof(struct Bikeshed_Shed_private), 8) + \
         (uint32_t)BIKESHED_ALIGN_SIZE_PRIVATE(sizeof(struct Bikeshed_Task_private) * (max_task_count), 8) + \
@@ -71,17 +195,65 @@ struct Bikeshed_Shed_private
         (uint32_t)BIKESHED_ALIGN_SIZE_PRIVATE(sizeof(long volatile) * (channel_count), 4) + \
         (uint32_t)BIKESHED_ALIGN_SIZE_PRIVATE(sizeof(long volatile) * (max_task_count), 4))
 
+// Create a Bikeshed at the provided memory location
+// Use BIKESHED_SIZE to get the required size of the memory block
+// max_task_count, max_dependency_count and channel_count must match call to BIKESHED_SIZE
+//
+// ready_callback is optional and may be 0
+//
+// The returned Bikeshed is a typed pointer that points to same address as mem
 Bikeshed Bikeshed_Create(void* mem, uint32_t max_task_count, uint32_t max_dependency_count, uint8_t channel_count, struct Bikeshed_ReadyCallback* ready_callback);
+
+// Clones the state of a Bikeshed
+// Use BIKESHED_SIZE to get the required size of the memory block
+// max_task_count, max_dependency_count and channel_count must match call to BIKESHED_SIZE
+//
+// Makes a complete copy of the current state of a Bikeshed, executing on the clone copy will not affect the
+// bikeshed state of the original.
+//
+// The returned Bikeshed is a typed pointer that points to same address as mem
 Bikeshed Bikeshed_CloneState(void* mem, Bikeshed original, uint32_t shed_size);
 
+// Creates one or more tasks
+// Reserves task_count number of tasks from the internal Bikeshed state
+// Caller is resposible for making sure the context pointers are valid until the corresponding task is executed
+// Tasks will not be executed until they are readied with Bikeshed_ReadyTasks or if it has dependencies that have all been resolved
+// Returns:
+//  1 - Success
+//  0 - Not enough free task instances in the bikeshed
 int Bikeshed_CreateTasks(Bikeshed shed, uint32_t task_count, BikeShed_TaskFunc* task_functions, void** contexts, Bikeshed_TaskID* out_task_ids);
+
+// Set the channel of one or more tasks
+// The default channel for a task is 0.
+//
+// The channel is used when calling Bikeshed_ExecuteOne
 void Bikeshed_SetTasksChannel(Bikeshed shed, uint32_t task_count, Bikeshed_TaskID* task_ids, uint8_t channel);
+
+// Readies one or more tasks for execution
+// Tasks must not have any unresolved dependencies
+// Task execution order is not guarranteed - use dependecies to eforce task execution order
+// The Bikeshed_ReadyCallback of the shed (if any is set) will be called with task_count as number of readied tasks
 void Bikeshed_ReadyTasks(Bikeshed shed, uint32_t task_count, const Bikeshed_TaskID* task_ids);
 
-// Dependencies can not be added to a ready task
-// You can not add dependecies to the currently executing task in the BikeShed_TaskFunc callback
+// Add dependencies to a task
+// A task can have zero or more dependencies
+// If a task has been made ready with Bikeshed_ReadyTasks you may not add dependencies to the task.
+// A task that has been made ready may not be added as a dependency to another task.
+// A task may have multiple "parents" - it is valid to add the same task as child to more than one task.
+// Creating a task hierarchy that has circular dependencies makes it impossible to resolve.
+//
+// Returns:
+//  1 - Success
+//  0 - Not enough free dependency instances in the bikeshed
 int Bikeshed_AddDependencies(Bikeshed shed, Bikeshed_TaskID task_id, uint32_t task_count, const Bikeshed_TaskID* dependency_task_ids);
 
+// Execute one task
+// Checks the ready queue of channel and executes the task callback
+// Any parent dependencies are resolved and if any parent gets all its dependencies resolved they will be made ready for execution.
+//
+// Returns:
+//  1 - Executed one task
+//  2 - No task are ready for execution
 int Bikeshed_ExecuteOne(Bikeshed shed, uint8_t channel);
 
 #if defined(BIKESHED_IMPLEMENTATION)
@@ -120,9 +292,12 @@ int Bikeshed_ExecuteOne(Bikeshed shed, uint8_t channel);
 
 #if defined(BIKESHED_ASSERTS)
 #    define BIKESHED_FATAL_ASSERT_PRIVATE(x, bail) \
-        if (Bikeshed_Assert_private && !(x)) \
+        if (!(x)) \
         { \
-            Bikeshed_Assert_private(#x, __FILE__, __LINE__); \
+            if (Bikeshed_Assert_private) \
+            { \
+                Bikeshed_Assert_private(#x, __FILE__, __LINE__); \
+            } \
             bail; \
         }
 #else // defined(BIKESHED_ASSERTS)
@@ -255,8 +430,10 @@ static void Bikeshed_ResolveTask_private(Bikeshed shed, Bikeshed_TaskID task_id)
 
 Bikeshed Bikeshed_Create(void* mem, uint32_t max_task_count, uint32_t max_dependency_count, uint8_t channel_count, struct Bikeshed_ReadyCallback* sync_primitive)
 {
+    BIKESHED_FATAL_ASSERT_PRIVATE(max_task_count > 0, return 0);
     BIKESHED_FATAL_ASSERT_PRIVATE(max_task_count == BIKESHED_TASK_INDEX_PRIVATE(max_task_count), return 0);
     BIKESHED_FATAL_ASSERT_PRIVATE(max_dependency_count == BIKESHED_TASK_INDEX_PRIVATE(max_dependency_count), return 0);
+    BIKESHED_FATAL_ASSERT_PRIVATE(channel_count >= 1, return 0);
 
     Bikeshed shed                       = (Bikeshed)mem;
     shed->m_TaskGeneration              = 1;
@@ -305,6 +482,7 @@ Bikeshed Bikeshed_CloneState(void* mem, Bikeshed original, uint32_t shed_size)
 
 int Bikeshed_CreateTasks(Bikeshed shed, uint32_t task_count, BikeShed_TaskFunc* task_functions, void** contexts, Bikeshed_TaskID* out_task_ids)
 {
+    BIKESHED_FATAL_ASSERT_PRIVATE(task_count > 0, return 0);
     long generation = BIKESHED_ATOMICADD(&shed->m_TaskGeneration, 1);
     for (uint32_t i = 0; i < task_count; ++i)
     {
@@ -438,3 +616,5 @@ int Bikeshed_ExecuteOne(Bikeshed shed, uint8_t channel)
 #ifdef __cplusplus
 }
 #endif // __cplusplus
+
+#endif // BIKESHED_INCLUDEGUARD_PRIVATE_H

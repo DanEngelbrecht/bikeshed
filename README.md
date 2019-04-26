@@ -13,6 +13,7 @@ Builds with MSVC, Clang and GCC, header only, C99 compliant, MIT license.
   - Automatic ready of tasks that reaches zero dependecies
   - Automatic free of tasks that has completed
 - A task can have many parents and many child dependecies
+- Task channels - execute tasks based on task channel
 - No memory allocations once shed is created
 - Minimal dependencies
 - Memory allocation and threading are users responsability
@@ -27,13 +28,12 @@ Builds with MSVC, Clang and GCC, header only, C99 compliant, MIT license.
 - Built in threading or syncronization code - API to add it is available
 - Unlimited number of active tasks - currently limited to 8 388 607 *active* tasks
 - Cancelling of tasks
-- Grouping of tasks
 - Tagging of tasks
 
 ## Dependencies
 Minimal dependecies with default overridable method for atomic operations.
  - `<stdint.h>`
- - `<stddef.h>`
+ - `<string.h>`
  - The default (optional) MSVC implementation depends on `<Windows.h>`.
 
 ### Optional default methods
