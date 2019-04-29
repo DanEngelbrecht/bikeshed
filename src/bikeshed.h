@@ -182,6 +182,8 @@ struct Bikeshed_Shed_private
     long volatile                       m_ReadyGeneration;
 };
 
+#define BIKESHED_ALIGN_SIZE_PRIVATE(x, align) (((x) + ((align)-1)) & ~((align)-1))
+
 // Calculates the memory needed for a Bikeshed instance
 // BIKESHED_SIZE is a macro which allows the Bikeshed to be allocated on the stack without heap allocations
 //
@@ -189,13 +191,13 @@ struct Bikeshed_Shed_private
 // max_dependency_count: 0 to 8 388 607 dependencies
 // channel_count: 1 to 255 channels
 #define BIKESHED_SIZE(max_task_count, max_dependency_count, channel_count) \
-        ((uint32_t)BIKESHED_ALIGN_SIZE_PRIVATE(sizeof(struct Bikeshed_Shed_private), 8) + \
-        (uint32_t)BIKESHED_ALIGN_SIZE_PRIVATE(sizeof(struct Bikeshed_Task_private) * (max_task_count), 8) + \
-        (uint32_t)BIKESHED_ALIGN_SIZE_PRIVATE(sizeof(struct Bikeshed_Dependency_private) * (max_dependency_count), 4) + \
-        (uint32_t)BIKESHED_ALIGN_SIZE_PRIVATE(sizeof(long volatile) * (max_task_count), 4) + \
-        (uint32_t)BIKESHED_ALIGN_SIZE_PRIVATE(sizeof(long volatile) * (max_dependency_count), 4) + \
-        (uint32_t)BIKESHED_ALIGN_SIZE_PRIVATE(sizeof(long volatile) * (channel_count), 4) + \
-        (uint32_t)BIKESHED_ALIGN_SIZE_PRIVATE(sizeof(long volatile) * (max_task_count), 4))
+        ((uint32_t)BIKESHED_ALIGN_SIZE_PRIVATE((uint32_t)sizeof(struct Bikeshed_Shed_private), 8u) + \
+        (uint32_t)BIKESHED_ALIGN_SIZE_PRIVATE((uint32_t)(sizeof(struct Bikeshed_Task_private) * (max_task_count)), 8u) + \
+        (uint32_t)BIKESHED_ALIGN_SIZE_PRIVATE((uint32_t)(sizeof(struct Bikeshed_Dependency_private) * (max_dependency_count)), 4u) + \
+        (uint32_t)BIKESHED_ALIGN_SIZE_PRIVATE((uint32_t)(sizeof(long volatile) * (max_task_count)), 4u) + \
+        (uint32_t)BIKESHED_ALIGN_SIZE_PRIVATE((uint32_t)(sizeof(long volatile) * (max_dependency_count)), 4u) + \
+        (uint32_t)BIKESHED_ALIGN_SIZE_PRIVATE((uint32_t)(sizeof(long volatile) * (channel_count)), 4u) + \
+        (uint32_t)BIKESHED_ALIGN_SIZE_PRIVATE((uint32_t)(sizeof(long volatile) * (max_task_count)), 4u))
 
 // Create a Bikeshed at the provided memory location
 // Use BIKESHED_SIZE to get the required size of the memory block
@@ -261,7 +263,9 @@ int Bikeshed_ExecuteOne(Bikeshed shed, uint8_t channel);
 #if defined(BIKESHED_IMPLEMENTATION)
 
 #if !defined(BIKESHED_ATOMICADD)
-    #if defined(_MSC_VER)
+    #if defined(__clang__) || defined(__GNUC__)
+        #define BIKESHED_ATOMICADD(value, amount) (__sync_add_and_fetch (value, amount))
+    #elif defined(_MSC_VER)
         #if !defined(_WINDOWS_)
             #define WIN32_LEAN_AND_MEAN
             #include <Windows.h>
@@ -270,13 +274,12 @@ int Bikeshed_ExecuteOne(Bikeshed shed, uint8_t channel);
 
         #define BIKESHED_ATOMICADD(value, amount) (_InterlockedExchangeAdd(value, amount) + amount)
     #endif
-    #if defined(__clang__) || defined(__GNUC__)
-        #define BIKESHED_ATOMICADD(value, amount) (__sync_fetch_and_add(value, amount) + amount)
-    #endif
 #endif
 
 #if !defined(BIKESHED_ATOMICCAS)
-    #if defined(_MSC_VER)
+    #if defined(__clang__) || defined(__GNUC__)
+        #define BIKESHED_ATOMICCAS(store, compare, value) __sync_val_compare_and_swap(store, compare, value)
+    #elif defined(_MSC_VER)
         #if !defined(_WINDOWS_)
             #define WIN32_LEAN_AND_MEAN
             #include <Windows.h>
@@ -285,12 +288,7 @@ int Bikeshed_ExecuteOne(Bikeshed shed, uint8_t channel);
 
         #define BIKESHED_ATOMICCAS(store, compare, value) _InterlockedCompareExchange(store, value, compare)
     #endif
-    #if defined(__clang__) || defined(__GNUC__)
-        #define BIKESHED_ATOMICCAS(store, compare, value) __sync_val_compare_and_swap(store, compare, value)
-    #endif
 #endif
-
-#define BIKESHED_ALIGN_SIZE_PRIVATE(x, align) (((x) + ((align)-1)) & ~((align)-1))
 
 #if defined(BIKESHED_ASSERTS)
 #    define BIKESHED_FATAL_ASSERT_PRIVATE(x, bail) \
@@ -374,7 +372,7 @@ static void Bikeshed_PoolInitialize_private(long volatile* generation, long vola
     *head = 1;
     for (uint32_t i = 0; i < fill_count - 1; ++i)
     {
-        items[i] = i + 2;
+        items[i] = (long)(i + 2);
     }
     items[fill_count - 1] = 0;
 }
@@ -383,8 +381,8 @@ static void Bikeshed_FreeTask_private(Bikeshed shed, Bikeshed_TaskID task_id)
 {
     Bikeshed_TaskIndex_private task_index  = BIKESHED_TASK_INDEX_PRIVATE(task_id);
     struct Bikeshed_Task_private* task     = &shed->m_Tasks[task_index - 1];
-    BIKESHED_FATAL_ASSERT_PRIVATE(task_id == task->m_TaskID, return );
-    BIKESHED_FATAL_ASSERT_PRIVATE(0 == task->m_ChildDependencyCount, return );
+    BIKESHED_FATAL_ASSERT_PRIVATE(task_id == task->m_TaskID, return )
+    BIKESHED_FATAL_ASSERT_PRIVATE(0 == task->m_ChildDependencyCount, return )
 
     task->m_TaskID                                    = 0;
     Bikeshed_DependencyIndex_private dependency_index = task->m_FirstDependencyIndex;
@@ -402,8 +400,8 @@ inline void Bikeshed_ReadyTask_private(Bikeshed shed, Bikeshed_TaskID task_id)
 {
     Bikeshed_TaskIndex_private task_index = BIKESHED_TASK_INDEX_PRIVATE(task_id);
     Bikeshed_Task_private* task           = &shed->m_Tasks[task_index - 1];
-    BIKESHED_FATAL_ASSERT_PRIVATE(task_id == task->m_TaskID, return);
-    BIKESHED_FATAL_ASSERT_PRIVATE(0x20000000 == BIKESHED_ATOMICADD(&shed->m_Tasks[task_index - 1].m_ChildDependencyCount, 0x20000000), return);
+    BIKESHED_FATAL_ASSERT_PRIVATE(task_id == task->m_TaskID, return)
+    BIKESHED_FATAL_ASSERT_PRIVATE(0x20000000 == BIKESHED_ATOMICADD(&shed->m_Tasks[task_index - 1].m_ChildDependencyCount, 0x20000000), return)
 
     Bikeshed_PoolPush_private(&shed->m_ReadyGeneration, &shed->m_ReadyHeads[task->m_Channel], shed->m_ReadyIndexes, task_index);
 }
@@ -412,7 +410,7 @@ static void Bikeshed_ResolveTask_private(Bikeshed shed, Bikeshed_TaskID task_id)
 {
     Bikeshed_TaskIndex_private task_index               = BIKESHED_TASK_INDEX_PRIVATE(task_id);
     struct Bikeshed_Task_private* task                  = &shed->m_Tasks[task_index - 1];
-    BIKESHED_FATAL_ASSERT_PRIVATE(task_id == task->m_TaskID, return );
+    BIKESHED_FATAL_ASSERT_PRIVATE(task_id == task->m_TaskID, return )
     Bikeshed_DependencyIndex_private dependency_index   = task->m_FirstDependencyIndex;
 
     while (dependency_index != 0)
@@ -432,29 +430,29 @@ static void Bikeshed_ResolveTask_private(Bikeshed shed, Bikeshed_TaskID task_id)
 
 Bikeshed Bikeshed_Create(void* mem, uint32_t max_task_count, uint32_t max_dependency_count, uint8_t channel_count, struct Bikeshed_ReadyCallback* sync_primitive)
 {
-    BIKESHED_FATAL_ASSERT_PRIVATE(max_task_count > 0, return 0);
-    BIKESHED_FATAL_ASSERT_PRIVATE(max_task_count == BIKESHED_TASK_INDEX_PRIVATE(max_task_count), return 0);
-    BIKESHED_FATAL_ASSERT_PRIVATE(max_dependency_count == BIKESHED_TASK_INDEX_PRIVATE(max_dependency_count), return 0);
-    BIKESHED_FATAL_ASSERT_PRIVATE(channel_count >= 1, return 0);
+    BIKESHED_FATAL_ASSERT_PRIVATE(max_task_count > 0, return 0)
+    BIKESHED_FATAL_ASSERT_PRIVATE(max_task_count == BIKESHED_TASK_INDEX_PRIVATE(max_task_count), return 0)
+    BIKESHED_FATAL_ASSERT_PRIVATE(max_dependency_count == BIKESHED_TASK_INDEX_PRIVATE(max_dependency_count), return 0)
+    BIKESHED_FATAL_ASSERT_PRIVATE(channel_count >= 1, return 0)
 
     Bikeshed shed                = (Bikeshed)mem;
     shed->m_TaskGeneration       = 1;
     shed->m_ReadyCallback        = sync_primitive;
     uint8_t* p                   = (uint8_t*)mem;
-    p                           += BIKESHED_ALIGN_SIZE_PRIVATE(sizeof(struct Bikeshed_Shed_private), 8);
+    p                           += BIKESHED_ALIGN_SIZE_PRIVATE((uint32_t)sizeof(struct Bikeshed_Shed_private), 8u);
     shed->m_Tasks                = (struct Bikeshed_Task_private*)((void*)p);
-    p                           += BIKESHED_ALIGN_SIZE_PRIVATE(sizeof(struct Bikeshed_Task_private) * max_task_count, 8);
+    p                           += BIKESHED_ALIGN_SIZE_PRIVATE((uint32_t)(sizeof(struct Bikeshed_Task_private) * max_task_count), 8u);
     shed->m_Dependencies         = (struct Bikeshed_Dependency_private*)((void*)p);
-    p                           += BIKESHED_ALIGN_SIZE_PRIVATE(sizeof(struct Bikeshed_Dependency_private) * max_dependency_count, 4);
+    p                           += BIKESHED_ALIGN_SIZE_PRIVATE((uint32_t)(sizeof(struct Bikeshed_Dependency_private) * max_dependency_count), 4u);
     shed->m_TaskIndexes          = (long*)(void*)p;
-    p                           += BIKESHED_ALIGN_SIZE_PRIVATE(sizeof(long) * max_task_count, 4);
+    p                           += BIKESHED_ALIGN_SIZE_PRIVATE((uint32_t)(sizeof(long) * max_task_count), 4u);
     shed->m_DependencyIndexes    = (long*)(void*)p;
-    p                           += BIKESHED_ALIGN_SIZE_PRIVATE(sizeof(long) * max_dependency_count, 4);
+    p                           += BIKESHED_ALIGN_SIZE_PRIVATE((uint32_t)(sizeof(long) * max_dependency_count), 4u);
     shed->m_ReadyHeads           = (long volatile*)(void*)p;
-    p                           += BIKESHED_ALIGN_SIZE_PRIVATE(sizeof(long volatile) * channel_count, 4);
+    p                           += BIKESHED_ALIGN_SIZE_PRIVATE((uint32_t)(sizeof(long volatile) * channel_count), 4u);
     shed->m_ReadyIndexes         = (long*)(void*)p;
-    p                           += BIKESHED_ALIGN_SIZE_PRIVATE(sizeof(long) * max_task_count, 4);
-    BIKESHED_FATAL_ASSERT_PRIVATE(p == &((uint8_t*)mem)[BIKESHED_SIZE(max_task_count, max_dependency_count, channel_count)], return 0);
+    p                           += BIKESHED_ALIGN_SIZE_PRIVATE((uint32_t)(sizeof(long) * max_task_count), 4u);
+    BIKESHED_FATAL_ASSERT_PRIVATE(p == &((uint8_t*)mem)[BIKESHED_SIZE(max_task_count, max_dependency_count, channel_count)], return 0)
 
     Bikeshed_PoolInitialize_private(&shed->m_TaskIndexGeneration, &shed->m_TaskIndexHead, shed->m_TaskIndexes, max_task_count);
     Bikeshed_PoolInitialize_private(&shed->m_DependencyIndexGeneration, &shed->m_DependencyIndexHead, shed->m_DependencyIndexes, max_dependency_count);
@@ -484,11 +482,11 @@ Bikeshed Bikeshed_CloneState(void* mem, Bikeshed original, uint32_t shed_size)
 
 int Bikeshed_CreateTasks(Bikeshed shed, uint32_t task_count, BikeShed_TaskFunc* task_functions, void** contexts, Bikeshed_TaskID* out_task_ids)
 {
-    BIKESHED_FATAL_ASSERT_PRIVATE(task_count > 0, return 0);
+    BIKESHED_FATAL_ASSERT_PRIVATE(task_count > 0, return 0)
     long generation = BIKESHED_ATOMICADD(&shed->m_TaskGeneration, 1);
     for (uint32_t i = 0; i < task_count; ++i)
     {
-        BIKESHED_FATAL_ASSERT_PRIVATE(task_functions[i] != 0, return 0);
+        BIKESHED_FATAL_ASSERT_PRIVATE(task_functions[i] != 0, return 0)
         Bikeshed_TaskIndex_private task_index = (Bikeshed_TaskIndex_private)Bikeshed_PoolPop_private(&shed->m_TaskIndexHead, shed->m_TaskIndexes);
         if (task_index == 0)
         {
@@ -519,9 +517,9 @@ void Bikeshed_SetTasksChannel(Bikeshed shed, uint32_t task_count, Bikeshed_TaskI
     {
         Bikeshed_TaskIndex_private task_index   = BIKESHED_TASK_INDEX_PRIVATE(task_ids[t]);
         struct Bikeshed_Task_private* task      = &shed->m_Tasks[task_index - 1];
-        BIKESHED_FATAL_ASSERT_PRIVATE(task_ids[t] == task->m_TaskID, return);
-        BIKESHED_FATAL_ASSERT_PRIVATE(task->m_ChildDependencyCount < 0x20000000, return);
-        BIKESHED_FATAL_ASSERT_PRIVATE(&shed->m_ReadyHeads[channel] < shed->m_ReadyIndexes, return);
+        BIKESHED_FATAL_ASSERT_PRIVATE(task_ids[t] == task->m_TaskID, return)
+        BIKESHED_FATAL_ASSERT_PRIVATE(task->m_ChildDependencyCount < 0x20000000, return)
+        BIKESHED_FATAL_ASSERT_PRIVATE(&shed->m_ReadyHeads[channel] < shed->m_ReadyIndexes, return)
         task->m_Channel  = channel;
     }
 }
@@ -530,15 +528,15 @@ int Bikeshed_AddDependencies(Bikeshed shed, Bikeshed_TaskID task_id, uint32_t ta
 {
     Bikeshed_TaskIndex_private task_index   = BIKESHED_TASK_INDEX_PRIVATE(task_id);
     struct Bikeshed_Task_private* task      = &shed->m_Tasks[task_index - 1];
-    BIKESHED_FATAL_ASSERT_PRIVATE(task_id == task->m_TaskID, return 0);
-    BIKESHED_FATAL_ASSERT_PRIVATE(task->m_ChildDependencyCount < 0x20000000, return 0);
+    BIKESHED_FATAL_ASSERT_PRIVATE(task_id == task->m_TaskID, return 0)
+    BIKESHED_FATAL_ASSERT_PRIVATE(task->m_ChildDependencyCount < 0x20000000, return 0)
 
     for (uint32_t i = 0; i < task_count; ++i)
     {
         Bikeshed_TaskID dependency_task_id                  = dependency_task_ids[i];
         Bikeshed_TaskIndex_private dependency_task_index    = BIKESHED_TASK_INDEX_PRIVATE(dependency_task_id);
         struct Bikeshed_Task_private* dependency_task       = &shed->m_Tasks[dependency_task_index - 1];
-        BIKESHED_FATAL_ASSERT_PRIVATE(dependency_task_id == dependency_task->m_TaskID, return 0);
+        BIKESHED_FATAL_ASSERT_PRIVATE(dependency_task_id == dependency_task->m_TaskID, return 0)
         Bikeshed_DependencyIndex_private dependency_index   = (Bikeshed_DependencyIndex_private)Bikeshed_PoolPop_private(&shed->m_DependencyIndexHead, shed->m_DependencyIndexes);
         if (dependency_index == 0)
         {
@@ -561,19 +559,19 @@ int Bikeshed_AddDependencies(Bikeshed shed, Bikeshed_TaskID task_id, uint32_t ta
         dependency->m_NextDependencyIndex               = dependency_task->m_FirstDependencyIndex;
         dependency_task->m_FirstDependencyIndex         = dependency_index;
     }
-    BIKESHED_ATOMICADD(&task->m_ChildDependencyCount, task_count);
+    BIKESHED_ATOMICADD(&task->m_ChildDependencyCount, (long)task_count);
 
     return 1;
 }
 
 void Bikeshed_ReadyTasks(Bikeshed shed, uint32_t task_count, const Bikeshed_TaskID* task_ids)
 {
-    BIKESHED_FATAL_ASSERT_PRIVATE(task_count > 0, return);
+    BIKESHED_FATAL_ASSERT_PRIVATE(task_count > 0, return)
     uint32_t i = task_count;
     do
     {
         Bikeshed_TaskID task_id = task_ids[--i];
-        BIKESHED_FATAL_ASSERT_PRIVATE(task_id == shed->m_Tasks[BIKESHED_TASK_INDEX_PRIVATE(task_id) - 1].m_TaskID, return );
+        BIKESHED_FATAL_ASSERT_PRIVATE(task_id == shed->m_Tasks[BIKESHED_TASK_INDEX_PRIVATE(task_id) - 1].m_TaskID, return )
         Bikeshed_ReadyTask_private(shed, task_id);
     } while(i > 0);
 
@@ -585,7 +583,7 @@ void Bikeshed_ReadyTasks(Bikeshed shed, uint32_t task_count, const Bikeshed_Task
 
 int Bikeshed_ExecuteOne(Bikeshed shed, uint8_t channel)
 {
-    BIKESHED_FATAL_ASSERT_PRIVATE(&shed->m_ReadyHeads[channel] < shed->m_ReadyIndexes, return 0);
+    BIKESHED_FATAL_ASSERT_PRIVATE(&shed->m_ReadyHeads[channel] < shed->m_ReadyIndexes, return 0)
     uint32_t task_index = Bikeshed_PoolPop_private(&shed->m_ReadyHeads[channel], shed->m_ReadyIndexes);
     if (task_index == 0)
     {
@@ -595,10 +593,10 @@ int Bikeshed_ExecuteOne(Bikeshed shed, uint8_t channel)
     struct Bikeshed_Task_private* task      = &shed->m_Tasks[task_index - 1];
     Bikeshed_TaskID task_id                 = task->m_TaskID;
 
-    BIKESHED_FATAL_ASSERT_PRIVATE(channel == task->m_Channel, return 0);
+    BIKESHED_FATAL_ASSERT_PRIVATE(channel == task->m_Channel, return 0)
     enum Bikeshed_TaskResult task_result    = task->m_TaskFunc(shed, task_id, task->m_Channel, task->m_TaskContext);
 
-    BIKESHED_FATAL_ASSERT_PRIVATE(0 == BIKESHED_ATOMICADD(&task->m_ChildDependencyCount, -0x20000000), return 0);
+    BIKESHED_FATAL_ASSERT_PRIVATE(0 == BIKESHED_ATOMICADD(&task->m_ChildDependencyCount, -0x20000000), return 0)
 
     if (task_result == BIKESHED_TASK_RESULT_COMPLETE)
     {
@@ -607,7 +605,7 @@ int Bikeshed_ExecuteOne(Bikeshed shed, uint8_t channel)
     }
     else
     {
-        BIKESHED_FATAL_ASSERT_PRIVATE(BIKESHED_TASK_RESULT_BLOCKED == task_result, return 0);
+        BIKESHED_FATAL_ASSERT_PRIVATE(BIKESHED_TASK_RESULT_BLOCKED == task_result, return 0)
     }
 
     return 1;

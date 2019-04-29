@@ -184,9 +184,9 @@ TEST(Bikeshed, Sync)
     {
         Bikeshed_ReadyCallback m_ReadyCallback;
         FakeLock()
-            : m_ReadyCallback { signal }
-            , ready_count(0)
+            : ready_count(0)
         {
+            m_ReadyCallback.SignalReady = signal;
         }
         static void signal(Bikeshed_ReadyCallback* primitive, uint32_t ready_count)
         {
@@ -415,10 +415,10 @@ struct NadirLock
 {
     Bikeshed_ReadyCallback m_ReadyCallback;
     NadirLock()
-        : m_ReadyCallback { signal }
-        , m_Lock(nadir::CreateLock(malloc(nadir::GetNonReentrantLockSize())))
+        : m_Lock(nadir::CreateLock(malloc(nadir::GetNonReentrantLockSize())))
         , m_ConditionVariable(nadir::CreateConditionVariable(malloc(nadir::GetConditionVariableSize()), m_Lock))
     {
+        m_ReadyCallback.SignalReady = signal;
     }
     ~NadirLock()
     {
