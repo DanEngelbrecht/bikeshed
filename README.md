@@ -64,5 +64,5 @@ The default implementations for the atomic functions can be overridden with your
 ## Test code dependecies
 
 Test code has dependencies added as git sub-modules
- - https://github.com/DanEngelbrecht/jctest for unit test validation
+ - https://github.com/JCash/jctest for unit test validation
  - https://github.com/DanEngelbrecht/nadir for threading and syncronization
