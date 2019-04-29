@@ -6,6 +6,26 @@
 Super simple work scheduler
 Builds with MSVC, Clang and GCC, header only, C99 compliant, MIT license.
 
+## Version history
+
+### Version v0.2 29/4 2019
+
+**Pre-release 2**
+
+#### Fixes
+
+- Internal cleanups
+- Fixed warnings and removed clang warning suppressions
+  - `-Wno-sign-conversion`
+  - `-Wno-unused-macros`
+  - `-Wno-c++98-compat`
+  - `-Wno-implicit-fallthrough`
+- Made it compile cleanly with clang++ on Windows
+
+### Version v0.1 26/4 2019
+
+**Pre-release 1**
+
 ## Features
 - Generic tasks scheduling with dependecies between tasks
   - Each task has zero or many dependecies (as defined by user)
