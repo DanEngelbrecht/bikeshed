@@ -1071,6 +1071,132 @@ TEST(Bikeshed, Channels)
     ASSERT_EQ(1u, tasks[2].executed);
 }
 
+TEST(Bikeshed, ChannelRanges)
+{
+    AssertAbort fatal;
+
+    char mem[BIKESHED_SIZE(16, 0, 5)];
+    Bikeshed shed = Bikeshed_Create(mem, 16, 0, 5, 0);
+
+    struct TaskData
+    {
+        TaskData()
+            : shed(0)
+            , task_id(0)
+            , executed(0)
+            , channel(255)
+        {
+        }
+        static Bikeshed_TaskResult Compute(Bikeshed shed, Bikeshed_TaskID task_id, uint8_t channel, TaskData* task_data)
+        {
+            task_data->shed = shed;
+            ++task_data->executed;
+            task_data->task_id = task_id;
+            task_data->channel = channel;
+            return BIKESHED_TASK_RESULT_COMPLETE;
+        }
+        Bikeshed        shed;
+        Bikeshed_TaskID task_id;
+        uint32_t        executed;
+        uint32_t        channel;
+    };
+
+    TaskData           tasks[16];
+    BikeShed_TaskFunc funcs[16] = {
+        (BikeShed_TaskFunc)TaskData::Compute,
+        (BikeShed_TaskFunc)TaskData::Compute,
+        (BikeShed_TaskFunc)TaskData::Compute,
+        (BikeShed_TaskFunc)TaskData::Compute,
+        (BikeShed_TaskFunc)TaskData::Compute,
+        (BikeShed_TaskFunc)TaskData::Compute,
+        (BikeShed_TaskFunc)TaskData::Compute,
+        (BikeShed_TaskFunc)TaskData::Compute,
+        (BikeShed_TaskFunc)TaskData::Compute,
+        (BikeShed_TaskFunc)TaskData::Compute,
+        (BikeShed_TaskFunc)TaskData::Compute,
+        (BikeShed_TaskFunc)TaskData::Compute,
+        (BikeShed_TaskFunc)TaskData::Compute,
+        (BikeShed_TaskFunc)TaskData::Compute,
+        (BikeShed_TaskFunc)TaskData::Compute,
+        (BikeShed_TaskFunc)TaskData::Compute
+    };
+    void* contexts[16] = {
+        &tasks[0],
+        &tasks[1],
+        &tasks[2],
+        &tasks[3],
+        &tasks[4],
+        &tasks[5],
+        &tasks[6],
+        &tasks[7],
+        &tasks[8],
+        &tasks[9],
+        &tasks[10],
+        &tasks[11],
+        &tasks[12],
+        &tasks[13],
+        &tasks[14],
+        &tasks[15]
+    };
+    Bikeshed_TaskID task_ids[16];
+
+    ASSERT_TRUE(Bikeshed_CreateTasks(shed, 16, funcs, contexts, task_ids));
+
+    Bikeshed_SetTasksChannel(shed, 5, &task_ids[0], 2);
+    Bikeshed_SetTasksChannel(shed, 5, &task_ids[5], 0);
+    Bikeshed_SetTasksChannel(shed, 5, &task_ids[10], 1);
+    Bikeshed_SetTasksChannel(shed, 1, &task_ids[15], 0);
+
+    Bikeshed_ReadyTasks(shed, 16, &task_ids[0]);
+
+    for (uint32_t i = 0; i < 6; ++i)
+    {
+        ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 0));
+    }
+    ASSERT_TRUE(!Bikeshed_ExecuteOne(shed, 0));
+
+    for (uint32_t i = 0; i < 5; ++i)
+    {
+        ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 1));
+    }
+    ASSERT_TRUE(!Bikeshed_ExecuteOne(shed, 1));
+
+    for (uint32_t i = 0; i < 5; ++i)
+    {
+        ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 2));
+    }
+    ASSERT_TRUE(!Bikeshed_ExecuteOne(shed, 2));
+
+    for (uint32_t i = 0; i < 5; ++i)
+    {
+        ASSERT_EQ(task_ids[i + 0], tasks[i + 0].task_id);
+        ASSERT_EQ(shed, tasks[i + 0].shed);
+        ASSERT_EQ(1u, tasks[i + 0].executed);
+        ASSERT_EQ(2u, tasks[i + 0].channel);
+    }
+
+    for (uint32_t i = 0; i < 5; ++i)
+    {
+        ASSERT_EQ(task_ids[i + 5], tasks[i + 5].task_id);
+        ASSERT_EQ(shed, tasks[i + 5].shed);
+        ASSERT_EQ(1u, tasks[i + 5].executed);
+        ASSERT_EQ(0u, tasks[i + 5].channel);
+    }
+    ASSERT_EQ(task_ids[15], tasks[15].task_id);
+    ASSERT_EQ(shed, tasks[15].shed);
+    ASSERT_EQ(1u, tasks[15].executed);
+    ASSERT_EQ(0u, tasks[15].channel);
+
+    for (uint32_t i = 0; i < 5; ++i)
+    {
+        ASSERT_EQ(task_ids[i + 10], tasks[i + 10].task_id);
+        ASSERT_EQ(shed, tasks[i + 10].shed);
+        ASSERT_EQ(1u, tasks[i + 10].executed);
+        ASSERT_EQ(1u, tasks[i + 10].channel);
+    }
+
+}
+
 struct StealingNodeWorker
 {
     StealingNodeWorker()
