@@ -8,6 +8,15 @@ Builds with MSVC, Clang and GCC, header only, C99 compliant, MIT license.
 
 ## Version history
 
+### Version v0.3 1/5 2019
+
+**Pre-release 3**
+
+#### Fixes
+
+- Ready callback is now called when a task is readied via dependency resolve
+- Tasks are readied in batch when possible
+
 ### Version v0.2 29/4 2019
 
 **Pre-release 2**
