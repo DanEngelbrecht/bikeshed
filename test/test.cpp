@@ -512,6 +512,7 @@ struct TaskData2
         : done(0)
         , shed(0)
         , task_id(0)
+        , executed(0)
     {
     }
     static Bikeshed_TaskResult Compute(Bikeshed shed, Bikeshed_TaskID task_id, uint8_t , void* context_data)
@@ -1204,6 +1205,8 @@ struct StealingNodeWorker
         , shed(0)
         , condition_variable(0)
         , thread(0)
+        , index(0)
+        , count(1)
     {
     }
 
