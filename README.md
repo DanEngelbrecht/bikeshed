@@ -7,7 +7,8 @@ Lock free hierarchical work scheduler
 Builds with MSVC, Clang and GCC, header only, C99 compliant, MIT license.
 
 See github for latest version: https://github.com/DanEngelbrecht/bikeshed
-See design blogs at: https://http://danengelbrecht.github.io
+
+See design blogs at: https://danengelbrecht.github.io
 
 ## Version history
 
