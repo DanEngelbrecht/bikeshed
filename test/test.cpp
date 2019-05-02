@@ -283,7 +283,7 @@ TEST(Bikeshed, ReadyCallback)
     AssertAbort fatal;
 
     ReadyCounter myCallback;
-    char mem[BIKESHED_SIZE(3, 2, 1)];
+    char mem[BIKESHED_SIZE(3, 2, 3)];
     Bikeshed shed = Bikeshed_Create(mem, 3, 2, 3, &myCallback.cb);
     TaskData           tasks[3];
     BikeShed_TaskFunc funcs[3] = {
@@ -452,6 +452,7 @@ struct NadirLock
     static void signal(Bikeshed_ReadyCallback* primitive, uint32_t ready_count)
     {
         NadirLock* _this = (NadirLock*)primitive;
+        nadir::AtomicAdd32(&_this->m_ReadyCount, ready_count);
         if (ready_count > 1)
         {
             nadir::WakeAll(_this->m_ConditionVariable);
@@ -460,7 +461,6 @@ struct NadirLock
         {
             nadir::WakeOne(_this->m_ConditionVariable);
         }
-        nadir::AtomicAdd32(&_this->m_ReadyCount, ready_count);
     }
     nadir::HNonReentrantLock  m_Lock;
     nadir::HConditionVariable m_ConditionVariable;

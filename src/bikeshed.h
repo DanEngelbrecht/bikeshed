@@ -464,7 +464,7 @@ static void Bikeshed_ResolveTask_private(Bikeshed shed, Bikeshed_TaskID task_id)
             if (resolved_task_count == 0)
             {
                 head_resolved_task_id       = parent_task->m_TaskID;
-                channel                     = parent_task->m_Channel;
+                channel                     = (uint8_t)parent_task->m_Channel;
             }
             else if (channel == parent_task->m_Channel)
             {
@@ -475,7 +475,7 @@ static void Bikeshed_ResolveTask_private(Bikeshed shed, Bikeshed_TaskID task_id)
                 uint32_t gen = (((uint32_t)BIKESHED_ATOMICADD(&shed->m_ReadyGeneration, 1)) << BIKSHED_GENERATION_SHIFT_PRIVATE) & BIKSHED_GENERATION_MASK_PRIVATE;
                 Bikeshed_ReadyRange_private(shed, gen, head_resolved_task_id, tail_resolved_task_index, channel);
                 head_resolved_task_id       = parent_task->m_TaskID;
-                channel                     = parent_task->m_Channel;
+                channel                     = (uint8_t)parent_task->m_Channel;
             }
             tail_resolved_task_index    = parent_task_index;
             ++resolved_task_count;
@@ -635,18 +635,18 @@ void Bikeshed_ReadyTasks(Bikeshed shed, uint32_t task_count, const Bikeshed_Task
     BIKESHED_FATAL_ASSERT_PRIVATE(task_count > 0, return)
     Bikeshed_TaskID head_task_id                = task_ids[0];
     Bikeshed_TaskIndex_private tail_task_index  = BIKESHED_TASK_INDEX_PRIVATE(head_task_id);
-    Bikeshed_Task_private* prev_task            = &shed->m_Tasks[tail_task_index - 1];
+    struct Bikeshed_Task_private* prev_task     = &shed->m_Tasks[tail_task_index - 1];
     BIKESHED_FATAL_ASSERT_PRIVATE(head_task_id == prev_task->m_TaskID, return )
     BIKESHED_FATAL_ASSERT_PRIVATE(0x20000000 == BIKESHED_ATOMICADD(&shed->m_Tasks[tail_task_index - 1].m_ChildDependencyCount, 0x20000000), return)
 
-    uint8_t channel = prev_task->m_Channel;
+    uint8_t channel = (uint8_t)prev_task->m_Channel;
     uint32_t gen = (((uint32_t)BIKESHED_ATOMICADD(&shed->m_ReadyGeneration, 1)) << BIKSHED_GENERATION_SHIFT_PRIVATE) & BIKSHED_GENERATION_MASK_PRIVATE;
     uint32_t i = 1;
     while (i < task_count)
     {
         Bikeshed_TaskID next_task_id                = task_ids[i];
         Bikeshed_TaskIndex_private next_task_index  = BIKESHED_TASK_INDEX_PRIVATE(next_task_id);
-        Bikeshed_Task_private* next_task            = &shed->m_Tasks[next_task_index - 1];
+        struct Bikeshed_Task_private* next_task     = &shed->m_Tasks[next_task_index - 1];
         BIKESHED_FATAL_ASSERT_PRIVATE(next_task_id == next_task->m_TaskID, return )
         BIKESHED_FATAL_ASSERT_PRIVATE(0x20000000 == BIKESHED_ATOMICADD(&shed->m_Tasks[next_task_index - 1].m_ChildDependencyCount, 0x20000000), return)
 
@@ -654,7 +654,7 @@ void Bikeshed_ReadyTasks(Bikeshed shed, uint32_t task_count, const Bikeshed_Task
         {
             Bikeshed_ReadyRange_private(shed, gen, head_task_id, tail_task_index, channel);
 
-            channel         = next_task->m_Channel;
+            channel         = (uint8_t)next_task->m_Channel;
             head_task_id    = next_task_id;
             tail_task_index = next_task_index;
             ++i;
@@ -688,7 +688,7 @@ int Bikeshed_ExecuteOne(Bikeshed shed, uint8_t channel)
     Bikeshed_TaskID task_id                 = task->m_TaskID;
 
     BIKESHED_FATAL_ASSERT_PRIVATE(channel == task->m_Channel, return 0)
-    enum Bikeshed_TaskResult task_result    = task->m_TaskFunc(shed, task_id, task->m_Channel, task->m_TaskContext);
+    enum Bikeshed_TaskResult task_result    = task->m_TaskFunc(shed, task_id, channel, task->m_TaskContext);
 
     BIKESHED_FATAL_ASSERT_PRIVATE(0 == BIKESHED_ATOMICADD(&task->m_ChildDependencyCount, -0x20000000), return 0)
 
