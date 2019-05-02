@@ -284,7 +284,7 @@ TEST(Bikeshed, ReadyCallback)
 
     ReadyCounter myCallback;
     char mem[BIKESHED_SIZE(3, 2, 1)];
-    Bikeshed shed = Bikeshed_Create(mem, 3, 2, 1, &myCallback.cb);
+    Bikeshed shed = Bikeshed_Create(mem, 3, 2, 3, &myCallback.cb);
     TaskData           tasks[3];
     BikeShed_TaskFunc funcs[3] = {
         TaskData::Compute,
@@ -315,6 +315,24 @@ TEST(Bikeshed, ReadyCallback)
     ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 0));
     ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 0));
     ASSERT_TRUE(!Bikeshed_ExecuteOne(shed, 0));
+    ASSERT_EQ(3, myCallback.ready_count);
+
+    myCallback.ready_count = 0;
+    ASSERT_TRUE(Bikeshed_CreateTasks(shed, 3, funcs, contexts, task_ids));
+    Bikeshed_SetTasksChannel(shed, 1, &task_ids[0], 2);
+    Bikeshed_SetTasksChannel(shed, 1, &task_ids[1], 1);
+    Bikeshed_SetTasksChannel(shed, 1, &task_ids[2], 0);
+    Bikeshed_AddDependencies(shed, task_ids[0], 1, &task_ids[2]);
+    Bikeshed_AddDependencies(shed, task_ids[1], 1, &task_ids[2]);
+    Bikeshed_ReadyTasks(shed, 1, &task_ids[2]);
+    ASSERT_TRUE(!Bikeshed_ExecuteOne(shed, 1));
+    ASSERT_TRUE(!Bikeshed_ExecuteOne(shed, 2));
+    ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 0));
+    ASSERT_TRUE(!Bikeshed_ExecuteOne(shed, 0));
+    ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 1));
+    ASSERT_TRUE(!Bikeshed_ExecuteOne(shed, 1));
+    ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 2));
+    ASSERT_TRUE(!Bikeshed_ExecuteOne(shed, 2));
     ASSERT_EQ(3, myCallback.ready_count);
 }
 
