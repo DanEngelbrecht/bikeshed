@@ -3,8 +3,11 @@
 |master      | [![Build Status](https://travis-ci.org/DanEngelbrecht/bikeshed.svg?branch=master)](https://travis-ci.org/DanEngelbrecht/bikeshed?branch=master) |
 
 # bikeshed
-Super simple work scheduler
+Lock free hierarchical work scheduler
 Builds with MSVC, Clang and GCC, header only, C99 compliant, MIT license.
+
+See github for latest version: https://github.com/DanEngelbrecht/bikeshed
+See design blogs at: https://http://danengelbrecht.github.io
 
 ## Version history
 
@@ -72,6 +75,8 @@ The default implementations for the atomic functions can be overridden with your
 
 ## Test code dependecies
 
-Test code has dependencies added as git sub-modules
+Test code has dependencies added as drop-in headers from
  - https://github.com/JCash/jctest for unit test validation
+
+Test code has dependencies added as git sub-modules from
  - https://github.com/DanEngelbrecht/nadir for threading and syncronization

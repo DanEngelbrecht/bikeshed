@@ -9,6 +9,7 @@ bikeshed.h - public domain - Dan Engelbrecht @DanEngelbrecht, 2019
 Lock free hierarchical work scheduler, builds with MSVC, Clang and GCC, header only, C99 compliant, MIT license.
 
 See github for latest version: https://github.com/DanEngelbrecht/bikeshed
+See design blogs at: https://http://danengelbrecht.github.io
 
 ## Version history
 
@@ -111,6 +112,8 @@ SOFTWARE.
 extern "C" {
 #endif // __cplusplus
 
+//  ------------- Public API Begin
+
 // Custom assert hook
 // If BIKESHED_ASSERTS is defined, Bikeshed will validate input parameters to make sure
 // correct API usage.
@@ -174,59 +177,13 @@ enum Bikeshed_TaskResult
 //  - Destroy the Bikeshed instance
 typedef enum Bikeshed_TaskResult (*BikeShed_TaskFunc)(Bikeshed shed, Bikeshed_TaskID task_id, uint8_t channel, void* context);
 
-typedef uint32_t Bikeshed_TaskIndex_private;
-typedef uint32_t Bikeshed_DependencyIndex_private;
-typedef uint32_t Bikeshed_ReadyIndex_private;
-
-struct Bikeshed_Dependency_private
-{
-    Bikeshed_TaskIndex_private       m_ParentTaskIndex;
-    Bikeshed_DependencyIndex_private m_NextDependencyIndex;
-};
-
-struct Bikeshed_Task_private
-{
-    long volatile                       m_ChildDependencyCount;
-    Bikeshed_TaskID                     m_TaskID;
-    uint32_t                            m_Channel  : 8;
-    uint32_t                            m_FirstDependencyIndex : 24;
-    BikeShed_TaskFunc                   m_TaskFunc;
-    void*                               m_TaskContext;
-};
-
-struct Bikeshed_Shed_private
-{
-    struct Bikeshed_Task_private*       m_Tasks;
-    struct Bikeshed_Dependency_private* m_Dependencies;
-    struct Bikeshed_ReadyCallback*      m_ReadyCallback;
-    long*                               m_TaskIndexes;
-    long*                               m_DependencyIndexes;
-    long volatile*                      m_ReadyHeads;
-    long*                               m_ReadyIndexes;
-    long volatile                       m_TaskIndexHead;
-    long volatile                       m_DependencyIndexHead;
-    long volatile                       m_TaskGeneration;
-    long volatile                       m_TaskIndexGeneration;
-    long volatile                       m_DependencyIndexGeneration;
-    long volatile                       m_ReadyGeneration;
-};
-
-#define BIKESHED_ALIGN_SIZE_PRIVATE(x, align) (((x) + ((align)-1)) & ~((align)-1))
-
 // Calculates the memory needed for a Bikeshed instance
 // BIKESHED_SIZE is a macro which allows the Bikeshed to be allocated on the stack without heap allocations
 //
 // max_task_count: 1 to 8 388 607 tasks
 // max_dependency_count: 0 to 8 388 607 dependencies
 // channel_count: 1 to 255 channels
-#define BIKESHED_SIZE(max_task_count, max_dependency_count, channel_count) \
-        ((uint32_t)BIKESHED_ALIGN_SIZE_PRIVATE((uint32_t)sizeof(struct Bikeshed_Shed_private), 8u) + \
-        (uint32_t)BIKESHED_ALIGN_SIZE_PRIVATE((uint32_t)(sizeof(struct Bikeshed_Task_private) * (max_task_count)), 8u) + \
-        (uint32_t)BIKESHED_ALIGN_SIZE_PRIVATE((uint32_t)(sizeof(struct Bikeshed_Dependency_private) * (max_dependency_count)), 4u) + \
-        (uint32_t)BIKESHED_ALIGN_SIZE_PRIVATE((uint32_t)(sizeof(long volatile) * (max_task_count)), 4u) + \
-        (uint32_t)BIKESHED_ALIGN_SIZE_PRIVATE((uint32_t)(sizeof(long volatile) * (max_dependency_count)), 4u) + \
-        (uint32_t)BIKESHED_ALIGN_SIZE_PRIVATE((uint32_t)(sizeof(long volatile) * (channel_count)), 4u) + \
-        (uint32_t)BIKESHED_ALIGN_SIZE_PRIVATE((uint32_t)(sizeof(long volatile) * (max_task_count)), 4u))
+#define BIKESHED_SIZE(max_task_count, max_dependency_count, channel_count)
 
 // Create a Bikeshed at the provided memory location
 // Use BIKESHED_SIZE to get the required size of the memory block
@@ -288,6 +245,58 @@ int Bikeshed_AddDependencies(Bikeshed shed, Bikeshed_TaskID task_id, uint32_t ta
 //  1 - Executed one task
 //  2 - No task are ready for execution
 int Bikeshed_ExecuteOne(Bikeshed shed, uint8_t channel);
+
+//  ------------- Public API End
+
+
+typedef uint32_t Bikeshed_TaskIndex_private;
+typedef uint32_t Bikeshed_DependencyIndex_private;
+typedef uint32_t Bikeshed_ReadyIndex_private;
+
+struct Bikeshed_Dependency_private
+{
+    Bikeshed_TaskIndex_private       m_ParentTaskIndex;
+    Bikeshed_DependencyIndex_private m_NextDependencyIndex;
+};
+
+struct Bikeshed_Task_private
+{
+    long volatile                       m_ChildDependencyCount;
+    Bikeshed_TaskID                     m_TaskID;
+    uint32_t                            m_Channel  : 8;
+    uint32_t                            m_FirstDependencyIndex : 24;
+    BikeShed_TaskFunc                   m_TaskFunc;
+    void*                               m_TaskContext;
+};
+
+struct Bikeshed_Shed_private
+{
+    struct Bikeshed_Task_private*       m_Tasks;
+    struct Bikeshed_Dependency_private* m_Dependencies;
+    struct Bikeshed_ReadyCallback*      m_ReadyCallback;
+    long*                               m_TaskIndexes;
+    long*                               m_DependencyIndexes;
+    long volatile*                      m_ReadyHeads;
+    long*                               m_ReadyIndexes;
+    long volatile                       m_TaskIndexHead;
+    long volatile                       m_DependencyIndexHead;
+    long volatile                       m_TaskGeneration;
+    long volatile                       m_TaskIndexGeneration;
+    long volatile                       m_DependencyIndexGeneration;
+    long volatile                       m_ReadyGeneration;
+};
+
+#define BIKESHED_ALIGN_SIZE_PRIVATE(x, align) (((x) + ((align)-1)) & ~((align)-1))
+
+#undef BIKESHED_SIZE
+#define BIKESHED_SIZE(max_task_count, max_dependency_count, channel_count) \
+        ((uint32_t)BIKESHED_ALIGN_SIZE_PRIVATE((uint32_t)sizeof(struct Bikeshed_Shed_private), 8u) + \
+        (uint32_t)BIKESHED_ALIGN_SIZE_PRIVATE((uint32_t)(sizeof(struct Bikeshed_Task_private) * (max_task_count)), 8u) + \
+        (uint32_t)BIKESHED_ALIGN_SIZE_PRIVATE((uint32_t)(sizeof(struct Bikeshed_Dependency_private) * (max_dependency_count)), 4u) + \
+        (uint32_t)BIKESHED_ALIGN_SIZE_PRIVATE((uint32_t)(sizeof(long volatile) * (max_task_count)), 4u) + \
+        (uint32_t)BIKESHED_ALIGN_SIZE_PRIVATE((uint32_t)(sizeof(long volatile) * (max_dependency_count)), 4u) + \
+        (uint32_t)BIKESHED_ALIGN_SIZE_PRIVATE((uint32_t)(sizeof(long volatile) * (channel_count)), 4u) + \
+        (uint32_t)BIKESHED_ALIGN_SIZE_PRIVATE((uint32_t)(sizeof(long volatile) * (max_task_count)), 4u))
 
 #if defined(BIKESHED_IMPLEMENTATION)
 
