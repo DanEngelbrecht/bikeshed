@@ -1262,115 +1262,115 @@ struct StealingNodeWorker
     uint32_t                    count;
 };
 
+struct TaskDataStealing
+{
+    static const uint32_t   WORKER_COUNT = 8;
+    static const uint32_t   TASK_COUNT = WORKER_COUNT + WORKER_COUNT * WORKER_COUNT;
+    TaskDataStealing()
+        : executed_count(0)
+        , complete_wakeup(0)
+        , child_task_data(0)
+        , executed_channel(WORKER_COUNT)
+    {
+    }
+    static Bikeshed_TaskResult NoSpawn(Bikeshed , Bikeshed_TaskID , uint8_t channel, void* context)
+    {
+        TaskDataStealing* _this = (TaskDataStealing*)context;
+        _this->executed_channel = channel;
+        if (TASK_COUNT == nadir::AtomicAdd32(_this->executed_count, 1))
+        {
+            _this->complete_wakeup->signal(&_this->complete_wakeup->m_ReadyCallback, 1);
+        }
+        return BIKESHED_TASK_RESULT_COMPLETE;
+    }
+    static Bikeshed_TaskResult SpawnLocal(Bikeshed shed, Bikeshed_TaskID , uint8_t channel, void* context)
+    {
+        TaskDataStealing* _this = (TaskDataStealing*)context;
+        _this->executed_channel = channel;
+        nadir::AtomicAdd32(_this->executed_count, 1);
+
+        TaskDataStealing*        tasks = _this->child_task_data;
+
+        BikeShed_TaskFunc funcs[WORKER_COUNT];
+        void* contexts[WORKER_COUNT];
+        for (uint32_t i = 0; i < WORKER_COUNT; ++i)
+        {
+            tasks[i].executed_count = _this->executed_count;
+            tasks[i].complete_wakeup = _this->complete_wakeup;
+            tasks[i].child_task_data = 0;
+            funcs[i] = TaskDataStealing::NoSpawn;
+            contexts[i] = &tasks[i];
+        }
+        Bikeshed_TaskID task_ids[WORKER_COUNT];
+        if (Bikeshed_CreateTasks(shed, WORKER_COUNT, funcs, contexts, task_ids))
+        {
+            Bikeshed_SetTasksChannel(shed, WORKER_COUNT, &task_ids[0], channel);
+            Bikeshed_ReadyTasks(shed, WORKER_COUNT, &task_ids[0]);
+        }
+
+        return BIKESHED_TASK_RESULT_COMPLETE;
+    }
+    nadir::TAtomic32*   executed_count;
+    NadirLock*          complete_wakeup;
+    TaskDataStealing*   child_task_data;
+    uint8_t             executed_channel;
+};
+
 TEST(Bikeshed, TaskStealing)
 {
     AssertAbort fatal;
 
-    static const uint32_t   WORKER_COUNT = 8;
-    static const uint32_t   TASK_COUNT = WORKER_COUNT + WORKER_COUNT * WORKER_COUNT;
-    static const uint32_t   SHED_SIZE BIKESHED_SIZE(TASK_COUNT, 0, WORKER_COUNT);
+    static const uint32_t   SHED_SIZE BIKESHED_SIZE(TaskDataStealing::TASK_COUNT, 0, TaskDataStealing::WORKER_COUNT);
     char mem[SHED_SIZE];
 
     NadirLock complete_wakeup;
     NadirLock sync_primitive;
     
-    Bikeshed shed = Bikeshed_Create(mem, TASK_COUNT, 0, WORKER_COUNT, &sync_primitive.m_ReadyCallback);
+    Bikeshed shed = Bikeshed_Create(mem, TaskDataStealing::TASK_COUNT, 0, TaskDataStealing::WORKER_COUNT, &sync_primitive.m_ReadyCallback);
 
     nadir::TAtomic32 stop = 0;
 
-    StealingNodeWorker    workers[WORKER_COUNT];
-    for (uint32_t worker_index = 0; worker_index < WORKER_COUNT; ++worker_index)
+    StealingNodeWorker    workers[TaskDataStealing::WORKER_COUNT];
+    for (uint32_t worker_index = 0; worker_index < TaskDataStealing::WORKER_COUNT; ++worker_index)
     {
-        ASSERT_TRUE(workers[worker_index].CreateThread(shed, sync_primitive.m_ConditionVariable, worker_index, WORKER_COUNT, &stop));
+        ASSERT_TRUE(workers[worker_index].CreateThread(shed, sync_primitive.m_ConditionVariable, worker_index, TaskDataStealing::WORKER_COUNT, &stop));
     }
 
     nadir::TAtomic32 executed_count = 0;
 
-    struct TaskDataStealing
-    {
-        TaskDataStealing()
-            : executed_count(0)
-            , complete_wakeup(0)
-            , child_task_data(0)
-            , executed_channel(WORKER_COUNT)
-        {
-        }
-        static Bikeshed_TaskResult NoSpawn(Bikeshed , Bikeshed_TaskID , uint8_t channel, void* context)
-        {
-            TaskDataStealing* _this = (TaskDataStealing*)context;
-            _this->executed_channel = channel;
-            if (TASK_COUNT == nadir::AtomicAdd32(_this->executed_count, 1))
-            {
-                _this->complete_wakeup->signal(&_this->complete_wakeup->m_ReadyCallback, 1);
-            }
-            return BIKESHED_TASK_RESULT_COMPLETE;
-        }
-        static Bikeshed_TaskResult SpawnLocal(Bikeshed shed, Bikeshed_TaskID , uint8_t channel, void* context)
-        {
-            TaskDataStealing* _this = (TaskDataStealing*)context;
-            _this->executed_channel = channel;
-            nadir::AtomicAdd32(_this->executed_count, 1);
-
-            TaskDataStealing*        tasks = _this->child_task_data;
-
-            BikeShed_TaskFunc funcs[WORKER_COUNT];
-            void* contexts[WORKER_COUNT];
-            for (uint32_t i = 0; i < WORKER_COUNT; ++i)
-            {
-                tasks[i].executed_count = _this->executed_count;
-                tasks[i].complete_wakeup = _this->complete_wakeup;
-                tasks[i].child_task_data = 0;
-                funcs[i] = TaskDataStealing::NoSpawn;
-                contexts[i] = &tasks[i];
-            }
-            Bikeshed_TaskID task_ids[WORKER_COUNT];
-            if (Bikeshed_CreateTasks(shed, WORKER_COUNT, funcs, contexts, task_ids))
-            {
-                Bikeshed_SetTasksChannel(shed, WORKER_COUNT, &task_ids[0], channel);
-                Bikeshed_ReadyTasks(shed, WORKER_COUNT, &task_ids[0]);
-            }
-
-            return BIKESHED_TASK_RESULT_COMPLETE;
-        }
-        nadir::TAtomic32*   executed_count;
-        NadirLock*          complete_wakeup;
-        TaskDataStealing*    child_task_data;
-        uint8_t            executed_channel;
-    };
-
-    TaskDataStealing    tasks[TASK_COUNT];
-    BikeShed_TaskFunc   funcs[WORKER_COUNT];
-    void*               contexts[WORKER_COUNT];
-    for (uint32_t i = 0; i < WORKER_COUNT; ++i)
+    TaskDataStealing    tasks[TaskDataStealing::TASK_COUNT];
+    BikeShed_TaskFunc   funcs[TaskDataStealing::WORKER_COUNT];
+    void*               contexts[TaskDataStealing::WORKER_COUNT];
+    for (uint32_t i = 0; i < TaskDataStealing::WORKER_COUNT; ++i)
     {
         tasks[i].executed_count = &executed_count;
         tasks[i].complete_wakeup = &complete_wakeup;
-        tasks[i].child_task_data = &tasks[(i + 1) * WORKER_COUNT];
+        tasks[i].child_task_data = &tasks[(i + 1) * TaskDataStealing::WORKER_COUNT];
         funcs[i] = TaskDataStealing::SpawnLocal;
         contexts[i] = &tasks[i];
     }
 
-    Bikeshed_TaskID        task_ids[WORKER_COUNT];
+    Bikeshed_TaskID        task_ids[TaskDataStealing::WORKER_COUNT];
 
-    ASSERT_TRUE(Bikeshed_CreateTasks(shed, WORKER_COUNT, funcs, contexts, task_ids));
+    ASSERT_TRUE(Bikeshed_CreateTasks(shed, TaskDataStealing::WORKER_COUNT, funcs, contexts, task_ids));
 
-    for (uint8_t c = 0; c < (uint8_t)WORKER_COUNT; ++c)
+    for (uint8_t c = 0; c < (uint8_t)TaskDataStealing::WORKER_COUNT; ++c)
     {
-        ASSERT_TRUE(BIKESHED_TASK_INDEX_PRIVATE(task_ids[c]) <= WORKER_COUNT);
+        ASSERT_TRUE(BIKESHED_TASK_INDEX_PRIVATE(task_ids[c]) <= TaskDataStealing::WORKER_COUNT);
         Bikeshed_SetTasksChannel(shed, 1, &task_ids[c], c);
     }
 
-    Bikeshed_ReadyTasks(shed, WORKER_COUNT, &task_ids[0]);
+    Bikeshed_ReadyTasks(shed, TaskDataStealing::WORKER_COUNT, &task_ids[0]);
 
-    while(executed_count != TASK_COUNT)
+    while(executed_count != TaskDataStealing::TASK_COUNT)
     {
         nadir::SleepConditionVariable(complete_wakeup.m_ConditionVariable, 1000);
     }
 
-    nadir::AtomicAdd32(&stop, WORKER_COUNT);
+    nadir::AtomicAdd32(&stop, TaskDataStealing::WORKER_COUNT);
     nadir::WakeAll(sync_primitive.m_ConditionVariable);
 
-    for (uint32_t worker_index = 0; worker_index < WORKER_COUNT; ++worker_index)
+    for (uint32_t worker_index = 0; worker_index < TaskDataStealing::WORKER_COUNT; ++worker_index)
     {
         while (!nadir::JoinThread(workers[worker_index].thread, 1000))
         {
@@ -1380,7 +1380,7 @@ TEST(Bikeshed, TaskStealing)
         }
     }
 
-    for (uint32_t worker_index = 0; worker_index < WORKER_COUNT; ++worker_index)
+    for (uint32_t worker_index = 0; worker_index < TaskDataStealing::WORKER_COUNT; ++worker_index)
     {
         workers[worker_index].DisposeThread();
     }
