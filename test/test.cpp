@@ -1,7 +1,6 @@
 #include "../third-party/jctest/src/jc_test.h"
 #include "../third-party/nadir/src/nadir.h"
 
-#define BIKESHED_IMPLEMENTATION
 #include "../src/bikeshed.h"
 
 #include <memory>
@@ -109,6 +108,46 @@ TEST(Bikeshed, SingleTask)
     ASSERT_EQ(1u, task.executed);
 
     ASSERT_FALSE(Bikeshed_ExecuteOne(shed, 0));
+}
+
+TEST(Bikeshed, FreeTasks)
+{
+    AssertAbort fatal;
+
+    char mem[BIKESHED_SIZE(5, 3, 1)];
+    Bikeshed shed = Bikeshed_Create(mem, 5, 3, 1, 0);
+
+    TaskData  tasks[5];
+    BikeShed_TaskFunc task_functions[5] = {
+        TaskData::Compute,
+        TaskData::Compute,
+        TaskData::Compute,
+        TaskData::Compute,
+        TaskData::Compute
+        };
+    void* task_contexts[5] = {
+        &tasks[0],
+        &tasks[1],
+        &tasks[2],
+        &tasks[3],
+        &tasks[4]
+        };
+
+
+    Bikeshed_TaskID task_ids[5];
+    ASSERT_TRUE(Bikeshed_CreateTasks(shed, 5, task_functions, task_contexts, task_ids));
+    ASSERT_FALSE(Bikeshed_CreateTasks(shed, 1, task_functions, task_contexts, task_ids));
+    Bikeshed_FreeTasks(shed, 5, task_ids);
+    ASSERT_TRUE(Bikeshed_CreateTasks(shed, 5, task_functions, task_contexts, task_ids));
+    ASSERT_FALSE(Bikeshed_CreateTasks(shed, 1, task_functions, task_contexts, task_ids));
+	ASSERT_TRUE(Bikeshed_AddDependencies(shed, 1, &task_ids[0], 2, &task_ids[2]));
+	ASSERT_TRUE(Bikeshed_AddDependencies(shed, 1, &task_ids[1], 1, &task_ids[4]));
+	Bikeshed_FreeTasks(shed, 3, &task_ids[2]);
+    Bikeshed_FreeTasks(shed, 2, &task_ids[0]);
+    ASSERT_TRUE(Bikeshed_CreateTasks(shed, 5, task_functions, task_contexts, task_ids));
+	ASSERT_FALSE(Bikeshed_AddDependencies(shed, 1, &task_ids[0], 4, &task_ids[1]));
+	ASSERT_TRUE(Bikeshed_AddDependencies(shed, 1, &task_ids[0], 3, &task_ids[1]));
+	ASSERT_FALSE(Bikeshed_AddDependencies(shed, 1, &task_ids[1], 1, &task_ids[4]));
 }
 
 TEST(Bikeshed, Blocked)
@@ -274,7 +313,7 @@ struct ReadyCounter {
     static void Ready(struct Bikeshed_ReadyCallback* ready_callback, uint32_t ready_count)
     {
         ReadyCounter* _this = (ReadyCounter*)ready_callback;
-        nadir::AtomicAdd32(&_this->ready_count, ready_count);
+        nadir::AtomicAdd32(&_this->ready_count, (long)ready_count);
     }
 };
 
@@ -298,7 +337,7 @@ TEST(Bikeshed, ReadyCallback)
     };
     Bikeshed_TaskID task_ids[3];
     ASSERT_TRUE(Bikeshed_CreateTasks(shed, 3, funcs, contexts, task_ids));
-    Bikeshed_AddDependencies(shed, task_ids[0], 2, &task_ids[1]);
+    ASSERT_TRUE(Bikeshed_AddDependencies(shed, 1, &task_ids[0], 2, &task_ids[1]));
     Bikeshed_ReadyTasks(shed, 2, &task_ids[1]);
     ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 0));
     ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 0));
@@ -308,8 +347,8 @@ TEST(Bikeshed, ReadyCallback)
 
     myCallback.ready_count = 0;
     ASSERT_TRUE(Bikeshed_CreateTasks(shed, 3, funcs, contexts, task_ids));
-    Bikeshed_AddDependencies(shed, task_ids[0], 1, &task_ids[2]);
-    Bikeshed_AddDependencies(shed, task_ids[1], 1, &task_ids[2]);
+    ASSERT_TRUE(Bikeshed_AddDependencies(shed, 1, &task_ids[0], 1, &task_ids[2]));
+    ASSERT_TRUE(Bikeshed_AddDependencies(shed, 1, &task_ids[1], 1, &task_ids[2]));
     Bikeshed_ReadyTasks(shed, 1, &task_ids[2]);
     ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 0));
     ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 0));
@@ -322,8 +361,7 @@ TEST(Bikeshed, ReadyCallback)
     Bikeshed_SetTasksChannel(shed, 1, &task_ids[0], 2);
     Bikeshed_SetTasksChannel(shed, 1, &task_ids[1], 1);
     Bikeshed_SetTasksChannel(shed, 1, &task_ids[2], 0);
-    Bikeshed_AddDependencies(shed, task_ids[0], 1, &task_ids[2]);
-    Bikeshed_AddDependencies(shed, task_ids[1], 1, &task_ids[2]);
+    ASSERT_TRUE(Bikeshed_AddDependencies(shed, 2, &task_ids[0], 1, &task_ids[2]));
     Bikeshed_ReadyTasks(shed, 1, &task_ids[2]);
     ASSERT_TRUE(!Bikeshed_ExecuteOne(shed, 1));
     ASSERT_TRUE(!Bikeshed_ExecuteOne(shed, 2));
@@ -361,9 +399,9 @@ TEST(Bikeshed, Dependency)
     Bikeshed_TaskID task_ids[5];
 
     ASSERT_TRUE(Bikeshed_CreateTasks(shed, 5, funcs, contexts, task_ids));
-    ASSERT_TRUE(Bikeshed_AddDependencies(shed, task_ids[0], 3, &task_ids[1]));
-    ASSERT_TRUE(Bikeshed_AddDependencies(shed, task_ids[3], 1, &task_ids[4]));
-    ASSERT_TRUE(Bikeshed_AddDependencies(shed, task_ids[1], 1, &task_ids[4]));
+    ASSERT_TRUE(Bikeshed_AddDependencies(shed, 1, &task_ids[0], 3, &task_ids[1]));
+    ASSERT_TRUE(Bikeshed_AddDependencies(shed, 1, &task_ids[3], 1, &task_ids[4]));
+    ASSERT_TRUE(Bikeshed_AddDependencies(shed, 1, &task_ids[1], 1, &task_ids[4]));
     Bikeshed_ReadyTasks(shed, 1, &task_ids[2]);
     Bikeshed_ReadyTasks(shed, 1, &task_ids[4]);
 
@@ -452,7 +490,7 @@ struct NadirLock
     static void signal(Bikeshed_ReadyCallback* primitive, uint32_t ready_count)
     {
         NadirLock* _this = (NadirLock*)primitive;
-        nadir::AtomicAdd32(&_this->m_ReadyCount, ready_count);
+        nadir::AtomicAdd32(&_this->m_ReadyCount, (long)ready_count);
         if (ready_count > 1)
         {
             nadir::WakeAll(_this->m_ConditionVariable);
@@ -650,9 +688,9 @@ TEST(Bikeshed, DependenciesThread)
     Bikeshed shed = Bikeshed_Create(mem, 5, 5, 1, &sync_primitive.m_ReadyCallback);
 
     ASSERT_TRUE(Bikeshed_CreateTasks(shed, 5, funcs, contexts, task_ids));
-    ASSERT_TRUE(Bikeshed_AddDependencies(shed, task_ids[0], 3, &task_ids[1]));
-    ASSERT_TRUE(Bikeshed_AddDependencies(shed, task_ids[3], 1, &task_ids[4]));
-    ASSERT_TRUE(Bikeshed_AddDependencies(shed, task_ids[1], 1, &task_ids[4]));
+    ASSERT_TRUE(Bikeshed_AddDependencies(shed, 1, &task_ids[0], 3, &task_ids[1]));
+    ASSERT_TRUE(Bikeshed_AddDependencies(shed, 1, &task_ids[3], 1, &task_ids[4]));
+    ASSERT_TRUE(Bikeshed_AddDependencies(shed, 1, &task_ids[1], 1, &task_ids[4]));
 
     NodeWorker thread_context;
     thread_context.CreateThread(shed, sync_primitive.m_ConditionVariable, &stop);
@@ -718,18 +756,18 @@ TEST(Bikeshed, DependenciesThreads)
         ASSERT_TRUE(Bikeshed_CreateTasks(shed, LAYER_TASK_COUNT[layer_index], &funcs[task_offset], &contexts[task_offset], &task_ids[task_offset]));
     }
 
-    ASSERT_TRUE(Bikeshed_AddDependencies(shed, task_ids[0], LAYER_TASK_COUNT[1], &task_ids[LAYER_TASK_OFFSET[1]]));
+    ASSERT_TRUE(Bikeshed_AddDependencies(shed, 1, &task_ids[0], LAYER_TASK_COUNT[1], &task_ids[LAYER_TASK_OFFSET[1]]));
     for (uint32_t i = 0; i < LAYER_TASK_COUNT[2]; ++i)
     {
         uint32_t parent_index = LAYER_TASK_OFFSET[1] + i;
         uint32_t child_index  = LAYER_TASK_OFFSET[2] + i;
-        ASSERT_TRUE(Bikeshed_AddDependencies(shed, task_ids[parent_index], 1, &task_ids[child_index]));
+        ASSERT_TRUE(Bikeshed_AddDependencies(shed, 1, &task_ids[parent_index], 1, &task_ids[child_index]));
     }
     for (uint32_t i = 0; i < LAYER_TASK_COUNT[3]; ++i)
     {
         uint32_t parent_index = LAYER_TASK_OFFSET[2] + i;
         uint32_t child_index  = LAYER_TASK_OFFSET[3] + i;
-        ASSERT_TRUE(Bikeshed_AddDependencies(shed, task_ids[parent_index], 1, &task_ids[child_index]));
+        ASSERT_TRUE(Bikeshed_AddDependencies(shed, 1, &task_ids[parent_index], 1, &task_ids[child_index]));
     }
 
     static const uint32_t WORKER_COUNT = 7;
@@ -969,21 +1007,21 @@ TEST(Bikeshed, ShedCopyState)
     BikeShed_TaskFunc mother0ChildFunc[2] = {CounterTask::Execute, CounterTask::Execute};
     void* mother0ChildContext[2] = {&mother0Child[0], &mother0Child[1]};
     ASSERT_NE(0, Bikeshed_CreateTasks(shed_master, 2, mother0ChildFunc, mother0ChildContext, mother0ChildTaskId));
-    ASSERT_NE(0, Bikeshed_AddDependencies(shed_master, motherTaskId[0], 2, mother0ChildTaskId));
+    ASSERT_NE(0, Bikeshed_AddDependencies(shed_master, 1, &motherTaskId[0], 2, mother0ChildTaskId));
 
     CounterTask mother0Child0Child[2];
     Bikeshed_TaskID mother0Child0ChildTaskId[2];
     BikeShed_TaskFunc mother0Child0ChildFunc[2] = {CounterTask::Execute, CounterTask::Execute};
     void* mother0Child0ChildContext[2] = {&mother0Child0Child[0], &mother0Child0Child[1]};
     ASSERT_NE(0, Bikeshed_CreateTasks(shed_master, 2, mother0Child0ChildFunc, mother0Child0ChildContext, mother0Child0ChildTaskId));
-    ASSERT_NE(0, Bikeshed_AddDependencies(shed_master, mother0ChildTaskId[0], 2, mother0Child0ChildTaskId));
+    ASSERT_NE(0, Bikeshed_AddDependencies(shed_master, 1, &mother0ChildTaskId[0], 2, mother0Child0ChildTaskId));
 
     CounterTask mother0Child1Child[3];
     Bikeshed_TaskID mother0Child1ChildTaskId[3];
     BikeShed_TaskFunc mother0Child1ChildFunc[3] = {CounterTask::Execute, CounterTask::Execute, CounterTask::Execute};
     void* mother0Child1ChildContext[3] = {&mother0Child1Child[0], &mother0Child1Child[1], &mother0Child1Child[2]};
     ASSERT_NE(0, Bikeshed_CreateTasks(shed_master, 3, mother0Child1ChildFunc, mother0Child1ChildContext, mother0Child1ChildTaskId));
-    ASSERT_NE(0, Bikeshed_AddDependencies(shed_master, mother0ChildTaskId[1], 3, mother0Child1ChildTaskId));
+    ASSERT_NE(0, Bikeshed_AddDependencies(shed_master, 1, &mother0ChildTaskId[1], 3, mother0Child1ChildTaskId));
 
     CounterTask mother123Child[2];
     Bikeshed_TaskID mother123ChildTaskId[2];
@@ -991,9 +1029,9 @@ TEST(Bikeshed, ShedCopyState)
     void* mother123ChildContext[2] = {&mother123Child[0], &mother123Child[1]};
     ASSERT_NE(0, Bikeshed_CreateTasks(shed_master, 2, mother123ChildFunc, mother123ChildContext, mother123ChildTaskId));
 
-    ASSERT_NE(0, Bikeshed_AddDependencies(shed_master, motherTaskId[1], 2, mother123ChildTaskId));
-    ASSERT_NE(0, Bikeshed_AddDependencies(shed_master, motherTaskId[2], 2, mother123ChildTaskId));
-    ASSERT_NE(0, Bikeshed_AddDependencies(shed_master, motherTaskId[3], 2, mother123ChildTaskId));
+    ASSERT_NE(0, Bikeshed_AddDependencies(shed_master, 1, &motherTaskId[1], 2, mother123ChildTaskId));
+    ASSERT_NE(0, Bikeshed_AddDependencies(shed_master, 1, &motherTaskId[2], 2, mother123ChildTaskId));
+    ASSERT_NE(0, Bikeshed_AddDependencies(shed_master, 1, &motherTaskId[3], 2, mother123ChildTaskId));
 
     Bikeshed_ReadyTasks(shed_master, 2, mother0Child0ChildTaskId);
     Bikeshed_ReadyTasks(shed_master, 3, mother0Child1ChildTaskId);
@@ -1356,7 +1394,6 @@ TEST(Bikeshed, TaskStealing)
 
     for (uint8_t c = 0; c < (uint8_t)TaskDataStealing::WORKER_COUNT; ++c)
     {
-        ASSERT_TRUE(BIKESHED_TASK_INDEX_PRIVATE(task_ids[c]) <= TaskDataStealing::WORKER_COUNT);
         Bikeshed_SetTasksChannel(shed, 1, &task_ids[c], c);
     }
 
@@ -1484,8 +1521,8 @@ TEST(Bikeshed, DependencyCreateHalfwayOverflow)
         task_ids[5]
     };
 
-    ASSERT_FALSE(Bikeshed_AddDependencies(shed, task_ids[0], 5, dependency_ids));
-    ASSERT_TRUE(Bikeshed_AddDependencies(shed, task_ids[0], 4, dependency_ids));
+    ASSERT_FALSE(Bikeshed_AddDependencies(shed, 1, &task_ids[0], 5, dependency_ids));
+    ASSERT_TRUE(Bikeshed_AddDependencies(shed, 1, &task_ids[0], 4, dependency_ids));
 
     Bikeshed_ReadyTasks(shed, 4, &task_ids[1]);
 
