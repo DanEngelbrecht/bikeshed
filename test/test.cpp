@@ -1315,9 +1315,10 @@ struct TaskDataStealing
     {
         TaskDataStealing* _this = (TaskDataStealing*)context;
         _this->executed_channel = channel;
+        NadirLock* complete_wakeup = _this->complete_wakeup;
         if (TASK_COUNT == nadir::AtomicAdd32(_this->executed_count, 1))
         {
-            _this->complete_wakeup->signal(&_this->complete_wakeup->m_ReadyCallback, 1);
+            complete_wakeup->signal(&complete_wakeup->m_ReadyCallback, 1);
         }
         return BIKESHED_TASK_RESULT_COMPLETE;
     }
@@ -1325,7 +1326,6 @@ struct TaskDataStealing
     {
         TaskDataStealing* _this = (TaskDataStealing*)context;
         _this->executed_channel = channel;
-        nadir::AtomicAdd32(_this->executed_count, 1);
 
         TaskDataStealing*        tasks = _this->child_task_data;
 
@@ -1346,6 +1346,7 @@ struct TaskDataStealing
             Bikeshed_ReadyTasks(shed, WORKER_COUNT, &task_ids[0]);
         }
 
+        nadir::AtomicAdd32(_this->executed_count, 1);
         return BIKESHED_TASK_RESULT_COMPLETE;
     }
     nadir::TAtomic32*   executed_count;
@@ -1432,6 +1433,7 @@ TEST(Bikeshed, TaskCreateHalfwayOverflow)
     char mem[SHED_SIZE];
 
     Bikeshed shed = Bikeshed_Create(mem, MAX_TASK_COUNT, 0, 1, 0);
+    ASSERT_NE((Bikeshed)0, shed);
 
     TaskData           tasks[5];
     BikeShed_TaskFunc funcs[5] = {
@@ -1491,6 +1493,7 @@ TEST(Bikeshed, DependencyCreateHalfwayOverflow)
     char mem[SHED_SIZE];
 
     Bikeshed shed = Bikeshed_Create(mem, MAX_TASK_COUNT, MAX_DEPENDENCY_COUNT, 1, 0);
+    ASSERT_NE((Bikeshed)0, shed);
 
     TaskData           tasks[6];
     BikeShed_TaskFunc funcs[6] = {
@@ -1565,8 +1568,10 @@ TEST(Bikeshed, MaxTaskCount)
     static const uint32_t   MAX_TASK_COUNT = 8388607;
     static const uint32_t   SHED_SIZE BIKESHED_SIZE(MAX_TASK_COUNT, 0, 1);
     void* mem = malloc(SHED_SIZE);
+    ASSERT_NE((void*)0, mem);
 
-    Bikeshed_Create(mem, MAX_TASK_COUNT, 0, 1, 0);
+    Bikeshed shed = Bikeshed_Create(mem, MAX_TASK_COUNT, 0, 1, 0);
+    ASSERT_NE((Bikeshed)0, shed);
     free(mem);
 }
 
@@ -1577,6 +1582,7 @@ TEST(Bikeshed, MaxOverdraftTaskCount)
     static const uint32_t   MAX_TASK_COUNT = 8388608;
     static const uint32_t   SHED_SIZE BIKESHED_SIZE(MAX_TASK_COUNT, 0, 1);
     void* mem = malloc(SHED_SIZE);
+    ASSERT_NE((void*)0, mem);
 
     Bikeshed_Create(mem, MAX_TASK_COUNT, 0, 1, 0);
 #if defined(BIKESHED_ASSERTS)
@@ -1592,6 +1598,7 @@ TEST(Bikeshed, MaxDependencyCount)
     static const uint32_t   MAX_DEPENDENCY_COUNT = 8388607;
     static const uint32_t   SHED_SIZE BIKESHED_SIZE(2, MAX_DEPENDENCY_COUNT, 1);
     void* mem = malloc(SHED_SIZE);
+    ASSERT_NE((void*)0, mem);
 
     Bikeshed_Create(mem, 2, MAX_DEPENDENCY_COUNT, 1, 0);
     free(mem);
