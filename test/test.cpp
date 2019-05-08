@@ -1286,7 +1286,7 @@ struct StealingNodeWorker
 
     static int32_t Execute(void* context)
     {
-        StealingNodeWorker* _this = (StealingNodeWorker*)context;
+        StealingNodeWorker* _this = reinterpret_cast<StealingNodeWorker*>(context);
 
         while (*_this->stop == 0)
         {
@@ -1320,7 +1320,7 @@ struct TaskDataStealing
     }
     static Bikeshed_TaskResult NoSpawn(Bikeshed , Bikeshed_TaskID , uint8_t channel, void* context)
     {
-        TaskDataStealing* _this = (TaskDataStealing*)context;
+        TaskDataStealing* _this = reinterpret_cast<TaskDataStealing*>(context);
         _this->executed_channel = channel;
         NadirLock* complete_wakeup = _this->complete_wakeup;
         if (TASK_COUNT == nadir::AtomicAdd32(_this->executed_count, 1))

@@ -575,8 +575,6 @@ Bikeshed Bikeshed_Create(void* mem, uint32_t max_task_count, uint32_t max_depend
     shed->m_Tasks                = (struct Bikeshed_Task_private*)((void*)p);
     p                           += BIKESHED_ALIGN_SIZE_PRIVATE((uint32_t)(sizeof(struct Bikeshed_Task_private) * max_task_count), 8u);
     shed->m_Dependencies         = (struct Bikeshed_Dependency_private*)((void*)p);
-    p                           += BIKESHED_ALIGN_SIZE_PRIVATE((uint32_t)(sizeof(struct Bikeshed_Dependency_private) * max_dependency_count), 4u);
-    BIKESHED_FATAL_ASSERT_PRIVATE(p == &((uint8_t*)mem)[BIKESHED_SIZE(max_task_count, max_dependency_count, channel_count)], return 0)
 
     Bikeshed_PoolInitialize_private(&shed->m_TaskIndexGeneration, &shed->m_TaskIndexHead, shed->m_TaskIndexes, max_task_count);
     Bikeshed_PoolInitialize_private(&shed->m_DependencyIndexGeneration, &shed->m_DependencyIndexHead, shed->m_DependencyIndexes, max_dependency_count);
