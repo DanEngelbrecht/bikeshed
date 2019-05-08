@@ -1,7 +1,7 @@
 |Branch      | OSX / Linux / Windows |
 |------------|-----------------------|
-[![Codacy Badge](https://api.codacy.com/project/badge/Grade/3f4c844382cc4314ada8d8c7ac27e544)](https://app.codacy.com/app/DanEngelbrecht/bikeshed?utm_source=github.com&utm_medium=referral&utm_content=DanEngelbrecht/bikeshed&utm_campaign=Badge_Grade_Dashboard)
 |master      | [![Build Status](https://travis-ci.org/DanEngelbrecht/bikeshed.svg?branch=master)](https://travis-ci.org/DanEngelbrecht/bikeshed?branch=master) |
+|master      | [![Codacy Badge](https://api.codacy.com/project/badge/Grade/3f4c844382cc4314ada8d8c7ac27e544)](https://app.codacy.com/app/DanEngelbrecht/bikeshed?utm_source=github.com&utm_medium=referral&utm_content=DanEngelbrecht/bikeshed&utm_campaign=Badge_Grade_Dashboard) |
 
 # bikeshed
 Lock free hierarchical work scheduler
