@@ -321,6 +321,9 @@ struct Bikeshed_Shed_private
         #endif
 
         #define BIKESHED_ATOMICADD(value, amount) (_InterlockedExchangeAdd(value, amount) + amount)
+    #else
+        inline long Bikeshed_NonAtomicAdd(long* store, long value) { *store += value; return *store; }
+        #define BIKESHED_ATOMICADD(value, amount) (Bikeshed_NonAtomicAdd(value, amount))
     #endif
 #endif
 
@@ -335,6 +338,9 @@ struct Bikeshed_Shed_private
         #endif
 
         #define BIKESHED_ATOMICCAS(store, compare, value) _InterlockedCompareExchange(store, value, compare)
+    #else
+        inline long Bikeshed_NonAtomicCAS(long* store, long compare, long value) { long old = *store; if (old == compare) { *store = value; } return old; }
+        #define BIKESHED_ATOMICCAS(store, compare, value) Bikeshed_NonAtomicCAS(store, value, compare)
     #endif
 #endif
 
@@ -361,7 +367,7 @@ void Bikeshed_SetAssert(Bikeshed_Assert assert_func)
 #if defined(BIKESHED_ASSERTS)
     Bikeshed_Assert_private = assert_func;
 #else  // defined(BIKESHED_ASSERTS)
-    assert_func = 0;
+    (void)assert_func;
 #endif // defined(BIKESHED_ASSERTS)
 }
 
@@ -742,6 +748,7 @@ int Bikeshed_AddDependencies(Bikeshed shed, uint32_t task_count, const Bikeshed_
 
                 while (t-- > 0)
                 {
+                    // TODO: Not covered by unit tests!
                     task_id     = task_ids[t];
                     task_index  = BIKESHED_TASK_INDEX_PRIVATE(task_id);
                     task        = &shed->m_Tasks[task_index - 1];
@@ -770,11 +777,11 @@ void Bikeshed_ReadyTasks(Bikeshed shed, uint32_t task_count, const Bikeshed_Task
     Bikeshed_TaskID head_task_id                = task_ids[0];
     Bikeshed_TaskIndex_private head_task_index  = BIKESHED_TASK_INDEX_PRIVATE(head_task_id);
     Bikeshed_TaskIndex_private tail_task_index  = head_task_index;
-    struct Bikeshed_Task_private* prev_task     = &shed->m_Tasks[head_task_index - 1];
-    BIKESHED_FATAL_ASSERT_PRIVATE(head_task_id == prev_task->m_TaskID, return )
-    BIKESHED_FATAL_ASSERT_PRIVATE(0x20000000 == BIKESHED_ATOMICADD(&prev_task->m_ChildDependencyCount, 0x20000000), return)
+    struct Bikeshed_Task_private* head_task     = &shed->m_Tasks[head_task_index - 1];
+    BIKESHED_FATAL_ASSERT_PRIVATE(head_task_id == head_task->m_TaskID, return )
+    BIKESHED_FATAL_ASSERT_PRIVATE(0x20000000 == BIKESHED_ATOMICADD(&head_task->m_ChildDependencyCount, 0x20000000), return)
 
-    uint8_t channel = (uint8_t)prev_task->m_Channel;
+    uint8_t channel = (uint8_t)head_task->m_Channel;
     uint32_t gen = (((uint32_t)BIKESHED_ATOMICADD(&shed->m_ReadyGeneration, 1)) << BIKSHED_GENERATION_SHIFT_PRIVATE) & BIKSHED_GENERATION_MASK_PRIVATE;
     uint32_t i = 1;
     while (i < task_count)
@@ -798,7 +805,6 @@ void Bikeshed_ReadyTasks(Bikeshed shed, uint32_t task_count, const Bikeshed_Task
 
         shed->m_ReadyIndexes[tail_task_index - 1] = (long)next_task_index;
         tail_task_index                           = next_task_index;
-        prev_task                                 = next_task;
         ++i;
     }
 

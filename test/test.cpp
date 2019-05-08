@@ -66,7 +66,7 @@ struct TaskData
     }
     static Bikeshed_TaskResult Compute(Bikeshed shed, Bikeshed_TaskID task_id, uint8_t channel, void* context)
     {
-        TaskData* task_data = (TaskData*)context;
+        TaskData* task_data = reinterpret_cast<TaskData*>(context);
         task_data->shed = shed;
         ++task_data->executed;
         task_data->task_id = task_id;
@@ -168,7 +168,7 @@ TEST(Bikeshed, Blocked)
         }
         static Bikeshed_TaskResult Compute(Bikeshed shed, Bikeshed_TaskID task_id, uint8_t , void* task_context)
         {
-            TaskData* task_data = (TaskData*)task_context;
+            TaskData* task_data = reinterpret_cast<TaskData*>(task_context);
             ++task_data->executed;
             if (task_data->blocked_count > 0)
             {
@@ -235,7 +235,7 @@ TEST(Bikeshed, Sync)
         }
         static void signal(Bikeshed_ReadyCallback* primitive, uint32_t ready_count)
         {
-            ((FakeLock*)primitive)->ready_count += ready_count;
+            (reinterpret_cast<FakeLock*>(primitive))->ready_count += ready_count;
         }
         uint32_t ready_count;
     } lock;
@@ -312,7 +312,7 @@ struct ReadyCounter {
     nadir::TAtomic32 ready_count;
     static void Ready(struct Bikeshed_ReadyCallback* ready_callback, uint32_t ready_count)
     {
-        ReadyCounter* _this = (ReadyCounter*)ready_callback;
+        ReadyCounter* _this = reinterpret_cast<ReadyCounter*>(ready_callback);
         nadir::AtomicAdd32(&_this->ready_count, (long)ready_count);
     }
 };
@@ -452,7 +452,7 @@ struct NodeWorker
 
     static int32_t Execute(void* context)
     {
-        NodeWorker* _this = (NodeWorker*)context;
+        NodeWorker* _this = reinterpret_cast<NodeWorker*>(context);
 
         while (*_this->stop == 0)
         {
@@ -489,7 +489,7 @@ struct NadirLock
     }
     static void signal(Bikeshed_ReadyCallback* primitive, uint32_t ready_count)
     {
-        NadirLock* _this = (NadirLock*)primitive;
+        NadirLock* _this = reinterpret_cast<NadirLock*>(primitive);
         nadir::AtomicAdd32(&_this->m_ReadyCount, (long)ready_count);
         if (ready_count > 1)
         {
@@ -517,7 +517,7 @@ struct TaskDataWorker
     }
     static Bikeshed_TaskResult Compute(Bikeshed shed, Bikeshed_TaskID task_id, uint8_t channel, void* context_data)
     {
-        TaskDataWorker* _this = (TaskDataWorker*)context_data;
+        TaskDataWorker* _this = reinterpret_cast<TaskDataWorker*>(context_data);
         if (nadir::AtomicAdd32(&_this->executed, 1) != 1)
         {
             exit(-1);
@@ -584,7 +584,7 @@ struct TaskData2
     }
     static Bikeshed_TaskResult Compute(Bikeshed shed, Bikeshed_TaskID task_id, uint8_t , void* context_data)
     {
-        TaskData2* _this = (TaskData2*)context_data;
+        TaskData2* _this = reinterpret_cast<TaskData2*>(context_data);
         _this->shed    = shed;
         _this->task_id = task_id;
         nadir::AtomicAdd32(_this->executed, 1);
@@ -830,7 +830,14 @@ struct MotherData
         , executed(0)
         , sub_task_spawned(0)
         , sub_task_executed(0)
-    { }
+    {
+        for (uint32_t i = 0; i < 5; ++i)
+        {
+            funcs[i] = 0;
+            contexts[i] = 0;
+            task_ids[i] = 0u;
+        }
+    }
 
     struct ChildData
     {
@@ -840,7 +847,7 @@ struct MotherData
 
         static Bikeshed_TaskResult Compute(Bikeshed shed, Bikeshed_TaskID , uint8_t , void* context_data)
         {
-            ChildData* _this = (ChildData*)context_data;
+            ChildData* _this = reinterpret_cast<ChildData*>(context_data);
             _this->mother_data->sub_task_executed++;
             --_this->mother_data->sub_task_spawned;
             if (_this->mother_data->sub_task_spawned == 0)
@@ -854,7 +861,7 @@ struct MotherData
 
     static Bikeshed_TaskResult Compute(Bikeshed shed, Bikeshed_TaskID task_id, uint8_t , void* context_data)
     {
-        MotherData* _this = (MotherData*)context_data;
+        MotherData* _this = reinterpret_cast<MotherData*>(context_data);
 
         _this->shed    = shed;
         _this->task_id = task_id;
@@ -899,16 +906,16 @@ struct MotherData
             exit(-1);
         }
     }
-    Bikeshed   shed;
-    Bikeshed_TaskID task_id;
-    nadir::TAtomic32  executed;
-    uint32_t          sub_task_spawned;
-    uint32_t          sub_task_executed;
+    Bikeshed            shed;
+    Bikeshed_TaskID     task_id;
+    nadir::TAtomic32    executed;
+    uint32_t            sub_task_spawned;
+    uint32_t            sub_task_executed;
 
-    ChildData          sub_tasks[5];
-    BikeShed_TaskFunc funcs[5];
-    void*              contexts[5];
-    Bikeshed_TaskID  task_ids[5];
+    ChildData           sub_tasks[5];
+    BikeShed_TaskFunc   funcs[5];
+    void*               contexts[5];
+    Bikeshed_TaskID     task_ids[5];
 };
 
 TEST(Bikeshed, InExecutionSpawnTasks)
@@ -957,7 +964,7 @@ TEST(Bikeshed, ShedCopyState)
 
         static Bikeshed_TaskResult Execute(Bikeshed , Bikeshed_TaskID , uint8_t , void* context_data)
         {
-            CounterTask* counter_task = (CounterTask*)context_data;
+            CounterTask* counter_task = reinterpret_cast<CounterTask*>(context_data);
             nadir::AtomicAdd32(&counter_task->m_Counter, 1);
             return BIKESHED_TASK_RESULT_COMPLETE;
         }
@@ -985,9 +992,9 @@ TEST(Bikeshed, ShedCopyState)
     uint32_t shed_size = BIKESHED_SIZE(13, 13, 1);
 
     void* shed_master_mem = malloc(shed_size);
-    ASSERT_NE((void*)0, shed_master_mem);
+    ASSERT_NE(reinterpret_cast<void*>(0), shed_master_mem);
     void* shed_execute_mem = malloc(shed_size);
-    ASSERT_NE((void*)0, shed_master_mem);
+    ASSERT_NE(reinterpret_cast<void*>(0), shed_execute_mem);
 
     NadirLock sync_primitive;
 
@@ -1054,8 +1061,8 @@ TEST(Bikeshed, ShedCopyState)
     ASSERT_EQ(3, mother[2].m_Counter);
     ASSERT_EQ(3, mother[3].m_Counter);
 
-    free(shed_master);
-    free(shed_execute);
+    free(shed_master_mem);
+    free(shed_execute_mem);
 }
 
 TEST(Bikeshed, Channels)
@@ -1568,7 +1575,7 @@ TEST(Bikeshed, MaxTaskCount)
     static const uint32_t   MAX_TASK_COUNT = 8388607;
     static const uint32_t   SHED_SIZE BIKESHED_SIZE(MAX_TASK_COUNT, 0, 1);
     void* mem = malloc(SHED_SIZE);
-    ASSERT_NE((void*)0, mem);
+    ASSERT_NE(reinterpret_cast<void*>(0), mem);
 
     Bikeshed shed = Bikeshed_Create(mem, MAX_TASK_COUNT, 0, 1, 0);
     ASSERT_NE((Bikeshed)0, shed);
@@ -1582,7 +1589,7 @@ TEST(Bikeshed, MaxOverdraftTaskCount)
     static const uint32_t   MAX_TASK_COUNT = 8388608;
     static const uint32_t   SHED_SIZE BIKESHED_SIZE(MAX_TASK_COUNT, 0, 1);
     void* mem = malloc(SHED_SIZE);
-    ASSERT_NE((void*)0, mem);
+    ASSERT_NE(reinterpret_cast<void*>(0), mem);
 
     Bikeshed_Create(mem, MAX_TASK_COUNT, 0, 1, 0);
 #if defined(BIKESHED_ASSERTS)
@@ -1598,7 +1605,7 @@ TEST(Bikeshed, MaxDependencyCount)
     static const uint32_t   MAX_DEPENDENCY_COUNT = 8388607;
     static const uint32_t   SHED_SIZE BIKESHED_SIZE(2, MAX_DEPENDENCY_COUNT, 1);
     void* mem = malloc(SHED_SIZE);
-    ASSERT_NE((void*)0, mem);
+    ASSERT_NE(reinterpret_cast<void*>(0), mem);
 
     Bikeshed_Create(mem, 2, MAX_DEPENDENCY_COUNT, 1, 0);
     free(mem);
