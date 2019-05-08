@@ -1331,7 +1331,7 @@ struct TaskDataStealing
     }
     static Bikeshed_TaskResult SpawnLocal(Bikeshed shed, Bikeshed_TaskID , uint8_t channel, void* context)
     {
-        TaskDataStealing* _this = (TaskDataStealing*)context;
+        TaskDataStealing* _this = reinterpret_cast<TaskDataStealing*>(context);
         _this->executed_channel = channel;
 
         TaskDataStealing*        tasks = _this->child_task_data;
