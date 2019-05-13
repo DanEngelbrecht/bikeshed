@@ -5,6 +5,43 @@
 
 #include <memory>
 
+#if 0
+static void PrintTask(Bikeshed shed, uint32_t index)
+{
+    Bikeshed_Task_private* task = &shed->m_Tasks[index - 1];
+    printf("m_Tasks[%u]\n", index);
+    printf("  m_ChildDependencyCount = %ld\n", task->m_ChildDependencyCount);
+    printf("  m_TaskID               = %u\n", task->m_TaskID);
+    printf("  m_Channel              = %u\n", task->m_Channel);
+    uint32_t dependencyIndex = task->m_FirstDependencyIndex;
+    printf("  m_FirstDependencyIndex = %u\n", dependencyIndex);
+    while (dependencyIndex)
+    {
+        Bikeshed_Dependency_private* dependency = &shed->m_Dependencies[dependencyIndex - 1];
+        printf("    Parent:  [%u]\n", dependency->m_ParentTaskIndex);
+        dependencyIndex = dependency->m_NextDependencyIndex;
+    }
+}
+
+static void PrintState(Bikeshed shed)
+{
+    struct AtomicIndex* ready_head = shed->m_ReadyHeads;
+    uint32_t channel = 0;
+    while((uintptr_t)&ready_head[channel] < (uintptr_t)shed->m_ReadyIndexes)
+    {
+        printf("Readyhead[%u]: %ld\n", channel, ready_head[channel].m_Index & 0xffff);
+
+        ++channel;
+    }
+    uint32_t task_index = 1;
+    while ((uintptr_t)&shed->m_Tasks[task_index - 1] < (uintptr_t)shed->m_Dependencies)
+    {
+        PrintTask(shed, task_index);
+        ++task_index;
+    }
+}
+#endif
+
 struct AssertAbort
 {
     AssertAbort()
@@ -233,7 +270,7 @@ TEST(Bikeshed, Sync)
         {
             m_ReadyCallback.SignalReady = signal;
         }
-        static void signal(Bikeshed_ReadyCallback* primitive, uint32_t ready_count)
+        static void signal(Bikeshed_ReadyCallback* primitive, uint8_t , uint32_t ready_count)
         {
             (reinterpret_cast<FakeLock*>(primitive))->ready_count += ready_count;
         }
@@ -270,7 +307,7 @@ TEST(Bikeshed, ReadyOrder)
     AssertAbort fatal;
 
     char mem[BIKESHED_SIZE(5, 4, 1)];
-    Bikeshed shed = Bikeshed_Create(mem, 5, 4, 1, 0);
+    Bikeshed shed = Bikeshed_Create(mem, 5, 4, 3, 0);
 
     TaskData           tasks[5];
     BikeShed_TaskFunc funcs[5] = {
@@ -290,15 +327,30 @@ TEST(Bikeshed, ReadyOrder)
     Bikeshed_TaskID task_ids[5];
 
     ASSERT_TRUE(Bikeshed_CreateTasks(shed, 5, funcs, contexts, task_ids));
+    Bikeshed_SetTasksChannel(shed, 2, &task_ids[0], 0u);
+    Bikeshed_SetTasksChannel(shed, 1, &task_ids[2], 1u);
+    Bikeshed_SetTasksChannel(shed, 2, &task_ids[3], 2u);
     Bikeshed_ReadyTasks(shed, 5, &task_ids[0]);
+
+    ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 0));
+    ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 0));
+    ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 1));
+    ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 2));
+    ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 2));
 
     for (uint32_t i = 0; i < 5; ++i)
     {
-        ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 0));
         ASSERT_EQ(task_ids[i], tasks[i].task_id);
         ASSERT_EQ(shed, tasks[i].shed);
         ASSERT_EQ(1u, tasks[i].executed);
     }
+
+    ASSERT_EQ(0u, tasks[0].channel);
+    ASSERT_EQ(0u, tasks[1].channel);
+    ASSERT_EQ(1u, tasks[2].channel);
+    ASSERT_EQ(2u, tasks[3].channel);
+    ASSERT_EQ(2u, tasks[4].channel);
+
     ASSERT_FALSE(Bikeshed_ExecuteOne(shed, 0));
 }
 
@@ -310,7 +362,7 @@ struct ReadyCounter {
     }
     struct Bikeshed_ReadyCallback cb;
     nadir::TAtomic32 ready_count;
-    static void Ready(struct Bikeshed_ReadyCallback* ready_callback, uint32_t ready_count)
+    static void Ready(struct Bikeshed_ReadyCallback* ready_callback, uint8_t, uint32_t ready_count)
     {
         ReadyCounter* _this = reinterpret_cast<ReadyCounter*>(ready_callback);
         nadir::AtomicAdd32(&_this->ready_count, (long)ready_count);
@@ -361,14 +413,17 @@ TEST(Bikeshed, ReadyCallback)
     Bikeshed_SetTasksChannel(shed, 1, &task_ids[0], 2);
     Bikeshed_SetTasksChannel(shed, 1, &task_ids[1], 1);
     Bikeshed_SetTasksChannel(shed, 1, &task_ids[2], 0);
+
     ASSERT_TRUE(Bikeshed_AddDependencies(shed, 2, &task_ids[0], 1, &task_ids[2]));
     Bikeshed_ReadyTasks(shed, 1, &task_ids[2]);
+
     ASSERT_TRUE(!Bikeshed_ExecuteOne(shed, 1));
     ASSERT_TRUE(!Bikeshed_ExecuteOne(shed, 2));
     ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 0));
     ASSERT_TRUE(!Bikeshed_ExecuteOne(shed, 0));
     ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 1));
     ASSERT_TRUE(!Bikeshed_ExecuteOne(shed, 1));
+    // TODO: Broken!
     ASSERT_TRUE(Bikeshed_ExecuteOne(shed, 2));
     ASSERT_TRUE(!Bikeshed_ExecuteOne(shed, 2));
     ASSERT_EQ(3, myCallback.ready_count);
@@ -487,7 +542,7 @@ struct NadirLock
         nadir::DeleteNonReentrantLock(m_Lock);
         free(m_Lock);
     }
-    static void signal(Bikeshed_ReadyCallback* primitive, uint32_t ready_count)
+    static void signal(Bikeshed_ReadyCallback* primitive, uint8_t , uint32_t ready_count)
     {
         NadirLock* _this = reinterpret_cast<NadirLock*>(primitive);
         nadir::AtomicAdd32(&_this->m_ReadyCount, (long)ready_count);
@@ -635,7 +690,7 @@ TEST(Bikeshed, WorkerThreads)
 
     ASSERT_EQ(65535, sync_primitive.m_ReadyCount);
 
-    sync_primitive.signal(&sync_primitive.m_ReadyCallback, 5);
+    sync_primitive.signal(&sync_primitive.m_ReadyCallback, 0, 5);
     nadir::AtomicAdd32(&stop, 1);
 
     nadir::JoinThread(thread_context[0].thread, nadir::TIMEOUT_INFINITE);
@@ -1325,7 +1380,7 @@ struct TaskDataStealing
         NadirLock* complete_wakeup = _this->complete_wakeup;
         if (TASK_COUNT == nadir::AtomicAdd32(_this->executed_count, 1))
         {
-            complete_wakeup->signal(&complete_wakeup->m_ReadyCallback, 1);
+            complete_wakeup->signal(&complete_wakeup->m_ReadyCallback, 0, 1);
         }
         return BIKESHED_TASK_RESULT_COMPLETE;
     }
