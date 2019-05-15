@@ -306,7 +306,8 @@ TEST(Bikeshed, ReadyOrder)
 {
     AssertAbort fatal;
 
-    char mem[BIKESHED_SIZE(5, 4, 1)];
+    char mem[BIKESHED_SIZE(5, 4, 3)];
+    memset(mem, 0, sizeof(mem));
     Bikeshed shed = Bikeshed_Create(mem, 5, 4, 3, 0);
 
     TaskData           tasks[5];
