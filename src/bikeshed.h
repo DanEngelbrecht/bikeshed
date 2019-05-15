@@ -893,7 +893,6 @@ int Bikeshed_ExecuteOne(Bikeshed shed, uint8_t channel)
 #undef BIKESHED_TASK_ID_PRIVATE
 #undef BIKESHED_TASK_GENERATION_PRIVATE
 #undef BIKESHED_TASK_INDEX_PRIVATE
-#undef BIKESHED_SHED_ALIGNEMENT_PRIVATE
 
 #endif // !defined(BIKESHED_IMPLEMENTATION)
 
