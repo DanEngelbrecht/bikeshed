@@ -667,33 +667,32 @@ int Bikeshed_CreateTasks(Bikeshed shed, uint32_t task_count, BikeShed_TaskFunc* 
     BIKESHED_FATAL_ASSERT_PRIVATE(contexts != 0, return 0)
     BIKESHED_FATAL_ASSERT_PRIVATE(out_task_ids != 0, return 0)
 
-    for (uint32_t i = 0; i < task_count; ++i)
+    do
     {
-        Bikeshed_TaskIndex_private task_index = (Bikeshed_TaskIndex_private)Bikeshed_PoolPop_private(&shed->m_TaskIndexHead.m_Index, shed->m_TaskIndexes);
-        if (task_index != 0)
+        uint32_t head = (uint32_t)shed->m_TaskIndexHead.m_Index;
+        Bikeshed_TaskIndex_private task_index = BIKESHED_TASK_INDEX_PRIVATE(head);
+        if (task_index == 0)
         {
-            out_task_ids[i]                    = task_index;
-            continue;
+            return 0;
         }
-        if (i-- > 0)
+        out_task_ids[0] = task_index;
+        for (uint32_t t = 1; t < task_count; ++t)
         {
-            task_index                                             = out_task_ids[i];
-            Bikeshed_DependencyIndex_private head_freed_task_index = task_index;
-            Bikeshed_DependencyIndex_private tail_freed_task_index = task_index;
-            while (i--)
+            task_index = (uint32_t)shed->m_TaskIndexes[task_index - 1];
+            if (task_index == 0)
             {
-                task_index                                     = out_task_ids[i];
-                shed->m_TaskIndexes[tail_freed_task_index - 1] = (long)task_index;
-                tail_freed_task_index                          = task_index;
+                return 0;
             }
-            uint32_t gen = (((uint32_t)BIKESHED_ATOMICADD_PRIVATE(&shed->m_TaskIndexGeneration.m_Index, 1)) << BIKSHED_GENERATION_SHIFT_PRIVATE) & BIKSHED_GENERATION_MASK_PRIVATE;
-            Bikeshed_PushRange_private(&shed->m_TaskIndexHead.m_Index, gen, head_freed_task_index, &shed->m_TaskIndexes[tail_freed_task_index-1]);
+            out_task_ids[t] = task_index;
         }
-        return 0;
-    }
+        uint32_t new_head   = (head & BIKSHED_GENERATION_MASK_PRIVATE) | (uint32_t)shed->m_TaskIndexes[task_index - 1];
+        if (BIKESHED_ATOMICCAS_PRIVATE(&shed->m_TaskIndexHead.m_Index, (long)head, (long)new_head) == (long)head)
+        {
+            break;
+        }
+    } while (1);
 
     long generation = BIKESHED_ATOMICADD_PRIVATE(&shed->m_TaskGeneration.m_Index, 1);
-
     for (uint32_t i = 0; i < task_count; ++i)
     {
         Bikeshed_TaskIndex_private task_index   = out_task_ids[i];
