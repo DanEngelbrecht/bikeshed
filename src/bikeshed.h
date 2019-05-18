@@ -14,6 +14,29 @@ See design blogs at: https:/danengelbrecht.github.io
 
 ## Version history
 
+### Version v0.4 18/5 2019
+
+**Pre-release 4**
+
+### API changes
+  - Bikeshed_AddDependencies to take array of parent task task_ids
+  - Bikeshed_ReadyCallback now gets called per channel range
+
+### API additions
+  - Bikeshed_FreeTasks
+  - BIKESHED_L1CACHE_SIZE to control ready head alignement - no padding/alignement added by default
+  - BIKESHED_CPU_YIELD to control yielding in high-contention scenarios
+
+### Fixes
+  - Added default (non-atomic) implementations for helper for unsupported platforms/compilers
+  - Codacy analisys and badge
+  - More input validation on public apis when BIKESHED_ASSERTS is enabled
+  - Batch allocation of task indexes
+  - Batch allocation of dependency indexes
+  - Batch free of task indexes
+  - Batch free of dependency indexes
+  - Fixed broken channel range detection when resolving dependencies
+
 ### Version v0.3 1/5 2019
 
 **Pre-release 3**
