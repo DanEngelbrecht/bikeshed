@@ -447,28 +447,6 @@ void Bikeshed_SetAssert(Bikeshed_Assert assert_func)
 #define BIKESHED_TASK_GENERATION_PRIVATE(task_id) ((long)(task_id >> BIKSHED_GENERATION_SHIFT_PRIVATE))
 #define BIKESHED_TASK_INDEX_PRIVATE(task_id) ((Bikeshed_TaskIndex_private)(task_id & BIKSHED_INDEX_MASK_PRIVATE))
 
-inline uint32_t Bikeshed_PoolPop_private(long volatile* head, long volatile* items)
-{
-    do
-    {
-        uint32_t current_head   = (uint32_t)*head;
-        uint32_t head_index     = BIKESHED_TASK_INDEX_PRIVATE(current_head);
-        if (head_index == 0)
-        {
-            return 0;
-        }
-
-        uint32_t next       = (uint32_t)items[head_index - 1];
-        uint32_t new_head   = (current_head & BIKSHED_GENERATION_MASK_PRIVATE) | next;
-
-        if (BIKESHED_ATOMICCAS_PRIVATE(head, (long)current_head, (long)new_head) == (long)current_head)
-        {
-            return head_index;
-        }
-        BIKESHED_CPU_YIELD_PRIVATE
-    } while (1);
-}
-
 static void Bikeshed_PoolInitialize_private(long volatile* generation, long volatile* head, long volatile* items, uint32_t fill_count)
 {
     *generation = 0;
@@ -888,11 +866,27 @@ int Bikeshed_ExecuteOne(Bikeshed shed, uint8_t channel)
     BIKESHED_FATAL_ASSERT_PRIVATE(shed != 0, return 0)
     BIKESHED_FATAL_ASSERT_PRIVATE((uintptr_t)&shed->m_ReadyHeads[channel] < (uintptr_t)shed->m_ReadyIndexes, return 0)
 
-    uint32_t task_index = Bikeshed_PoolPop_private(&shed->m_ReadyHeads[channel].m_Index, shed->m_ReadyIndexes);
-    if (task_index == 0)
+    long volatile* head = &shed->m_ReadyHeads[channel].m_Index;
+    long* items = shed->m_ReadyIndexes;
+    uint32_t task_index = 0;
+    do
     {
-        return 0;
-    }
+        uint32_t current_head   = (uint32_t)*head;
+        task_index              = BIKESHED_TASK_INDEX_PRIVATE(current_head);
+        if (task_index == 0)
+        {
+            return 0;
+        }
+
+        uint32_t next       = (uint32_t)items[task_index - 1];
+        uint32_t new_head   = (current_head & BIKSHED_GENERATION_MASK_PRIVATE) | next;
+
+        if (BIKESHED_ATOMICCAS_PRIVATE(head, (long)current_head, (long)new_head) == (long)current_head)
+        {
+            break;
+        }
+        BIKESHED_CPU_YIELD_PRIVATE
+    } while (1);
 
     struct Bikeshed_Task_private* task      = &shed->m_Tasks[task_index - 1];
     Bikeshed_TaskID task_id                 = task->m_TaskID;
