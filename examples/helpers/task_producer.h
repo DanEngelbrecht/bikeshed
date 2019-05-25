@@ -4,7 +4,6 @@
 
 struct TaskProducer
 {
-    #define TASK_PRODUCER_BATCH_SIZE 5
 
     TaskProducer()
         : executed_count(0)
