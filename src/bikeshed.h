@@ -521,7 +521,7 @@ static void Bikeshed_ResolveTask_private(Bikeshed shed, Bikeshed_DependencyIndex
         struct Bikeshed_Dependency_private* dependency  = &shed->m_Dependencies[dependency_index - 1];
         Bikeshed_TaskIndex_private  parent_task_index   = dependency->m_ParentTaskIndex;
         struct Bikeshed_Task_private* parent_task       = &shed->m_Tasks[parent_task_index - 1];
-        int32_t child_dependency_count                     = BIKESHED_ATOMICADD_PRIVATE(&parent_task->m_ChildDependencyCount, -1);
+        int32_t child_dependency_count                  = BIKESHED_ATOMICADD_PRIVATE(&parent_task->m_ChildDependencyCount, -1);
         if (child_dependency_count == 0)
         {
             BIKESHED_FATAL_ASSERT_PRIVATE(0x20000000 == BIKESHED_ATOMICADD_PRIVATE(&shed->m_Tasks[parent_task_index - 1].m_ChildDependencyCount, 0x20000000), return)

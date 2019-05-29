@@ -13,6 +13,15 @@ See design blogs at: https://danengelbrecht.github.io
 
 ## Version history
 
+### Version v1.0 29/5 2019
+
+**Release 1.0**
+
+### Fixes
+ - Use explicit int32_t for instead of long to ensure 32-bit values on GCC/Clang x64-builds
+ - Corrected URL to blog in README.md
+ - Added sample code for performance tests (in examples folder)
+
 ### Version v0.4 18/5 2019
 
 **Pre-release 4**
@@ -94,9 +103,10 @@ Minimal dependecies with default overridable method for atomic operations.
  - The default (optional) MSVC implementation depends on `<Windows.h>`.
 
 ### Optional default methods
-The default implementations for the atomic functions can be overridden with your own implementation by overriding the macros:
+The default implementations for the atomic and CPU yield functions can be overridden with your own implementation by overriding the macros:
  - `BIKESHED_ATOMICADD` Atomically adds a 32-bit signed integer to another 32-bit signed integer and returns the result
  - `BIKESHED_ATOMICCAS` Atomically exchange a 32-bit signed integer with another 32-bit signed integer if the value to be swapped matches the provided compare value, returns the old value.
+ - `BIKESHED_CPU_YIELD` Yield CPU (mm_pause() / YieldProcessor()).
 
 ## Test code dependecies
 
