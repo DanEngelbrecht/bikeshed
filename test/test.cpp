@@ -366,7 +366,7 @@ struct ReadyCounter {
     static void Ready(struct Bikeshed_ReadyCallback* ready_callback, uint8_t, uint32_t ready_count)
     {
         ReadyCounter* _this = reinterpret_cast<ReadyCounter*>(ready_callback);
-        nadir::AtomicAdd32(&_this->ready_count, (long)ready_count);
+        nadir::AtomicAdd32(&_this->ready_count, (int32_t)ready_count);
     }
 };
 
@@ -546,7 +546,7 @@ struct NadirLock
     static void signal(Bikeshed_ReadyCallback* primitive, uint8_t , uint32_t ready_count)
     {
         NadirLock* _this = reinterpret_cast<NadirLock*>(primitive);
-        nadir::AtomicAdd32(&_this->m_ReadyCount, (long)ready_count);
+        nadir::AtomicAdd32(&_this->m_ReadyCount, (int32_t)ready_count);
         if (ready_count > 1)
         {
             nadir::WakeAll(_this->m_ConditionVariable);
@@ -847,7 +847,7 @@ TEST(Bikeshed, DependenciesThreads)
             nadir::Sleep(1000);
         }
     }
-    ASSERT_EQ((long)TASK_COUNT, sync_primitive.m_ReadyCount);
+    ASSERT_EQ((int32_t)TASK_COUNT, sync_primitive.m_ReadyCount);
     nadir::AtomicAdd32(&stop, WORKER_COUNT);
     nadir::WakeAll(sync_primitive.m_ConditionVariable);
 
