@@ -143,7 +143,7 @@ SOFTWARE.
 
 #ifdef __cplusplus
 extern "C" {
-#endif // __cplusplus
+#endif
 
 //  ------------- Public API Begin
 
@@ -339,9 +339,9 @@ struct Bikeshed_Shed_private
 #define BIKESHED_ALIGN_SIZE_PRIVATE(x, align) (((x) + ((align)-1)) & ~((align)-1))
 
 #if defined(BIKESHED_L1CACHE_SIZE)
-    #define BIKESHED_SHED_ALIGNEMENT_PRIVATE    (BIKESHED_L1CACHE_SIZE)
+#   define BIKESHED_SHED_ALIGNEMENT_PRIVATE    (BIKESHED_L1CACHE_SIZE)
 #else
-    #define BIKESHED_SHED_ALIGNEMENT_PRIVATE    4u
+#   define BIKESHED_SHED_ALIGNEMENT_PRIVATE    4u
 #endif
 
 #undef BIKESHED_SIZE
@@ -356,88 +356,71 @@ struct Bikeshed_Shed_private
 
 #if defined(BIKESHED_IMPLEMENTATION)
 
-#if !defined(BIKESHED_ATOMICADD)
-    #if defined(__clang__) || defined(__GNUC__)
-        #define BIKESHED_ATOMICADD_PRIVATE(value, amount) (__sync_add_and_fetch (value, amount))
-    #elif defined(_MSC_VER)
-        #if !defined(_WINDOWS_)
-            #define WIN32_LEAN_AND_MEAN
-            #include <Windows.h>
-            #undef WIN32_LEAN_AND_MEAN
-        #endif
+#if defined(__clang__) || defined(__GNUC__)
+#   if !defined(BIKESHED_CPU_YIELD)
+#       include <emmintrin.h>
+#   endif
+#elif defined (_MSC_VER)
+#   if !defined(BIKESHED_ATOMICADD) || !defined(BIKESHED_ATOMICCAS) || !defined(BIKESHED_CPU_YIELD)
+#       if !defined(_WINDOWS_)
+#           define WIN32_LEAN_AND_MEAN
+#           include <Windows.h>
+#           undef WIN32_LEAN_AND_MEAN
+#       endif
+#   endif
+#endif
 
-        #define BIKESHED_ATOMICADD_PRIVATE(value, amount) (_InterlockedExchangeAdd((volatile LONG *)value, amount) + amount)
-    #else
+#if !defined(BIKESHED_ATOMICADD)
+#   if defined(__clang__) || defined(__GNUC__)
+#       define BIKESHED_ATOMICADD_PRIVATE(value, amount) (__sync_add_and_fetch (value, amount))
+#   elif defined(_MSC_VER)
+#       define BIKESHED_ATOMICADD_PRIVATE(value, amount) (_InterlockedExchangeAdd((volatile LONG *)value, amount) + amount)
+#   else
         inline int32_t Bikeshed_NonAtomicAdd(volatile int32_t* store, int32_t value) { *store += value; return *store; }
-        #define BIKESHED_ATOMICADD_PRIVATE(value, amount) (Bikeshed_NonAtomicAdd(value, amount))
-    #endif
+#       define BIKESHED_ATOMICADD_PRIVATE(value, amount) (Bikeshed_NonAtomicAdd(value, amount))
+#   endif
 #else
-    #define BIKESHED_ATOMICADD_PRIVATE BIKESHED_ATOMICADD
+#   define BIKESHED_ATOMICADD_PRIVATE BIKESHED_ATOMICADD
 #endif
 
 #if !defined(BIKESHED_ATOMICCAS)
-    #if defined(__clang__) || defined(__GNUC__)
-        #define BIKESHED_ATOMICCAS_PRIVATE(store, compare, value) __sync_val_compare_and_swap(store, compare, value)
-    #elif defined(_MSC_VER)
-        #if !defined(_WINDOWS_)
-            #define WIN32_LEAN_AND_MEAN
-            #include <Windows.h>
-            #undef WIN32_LEAN_AND_MEAN
-        #endif
-
-        #define BIKESHED_ATOMICCAS_PRIVATE(store, compare, value) _InterlockedCompareExchange((volatile LONG *)store, value, compare)
-    #else
+#   if defined(__clang__) || defined(__GNUC__)
+#       define BIKESHED_ATOMICCAS_PRIVATE(store, compare, value) __sync_val_compare_and_swap(store, compare, value)
+#   elif defined(_MSC_VER)
+#       define BIKESHED_ATOMICCAS_PRIVATE(store, compare, value) _InterlockedCompareExchange((volatile LONG *)store, value, compare)
+#   else
         inline int32_t Bikeshed_NonAtomicCAS(volatile int32_t* store, int32_t compare, int32_t value) { int32_t old = *store; if (old == compare) { *store = value; } return old; }
-        #define BIKESHED_ATOMICCAS_PRIVATE(store, compare, value) Bikeshed_NonAtomicCAS(store, value, compare)
-    #endif
+#       define BIKESHED_ATOMICCAS_PRIVATE(store, compare, value) Bikeshed_NonAtomicCAS(store, value, compare)
+#   endif
 #else
-    #define BIKESHED_ATOMICCAS_PRIVATE BIKESHED_ATOMICCAS
+#   define BIKESHED_ATOMICCAS_PRIVATE BIKESHED_ATOMICCAS
 #endif
 
 #if !defined(BIKESHED_CPU_YIELD)
-    #if defined(__clang__) || defined(__GNUC__)
-        #include <emmintrin.h>
-        #define BIKESHED_CPU_YIELD_PRIVATE   _mm_pause();
-    #elif defined(_MSC_VER)
-        #if !defined(_WINDOWS_)
-            #define WIN32_LEAN_AND_MEAN
-            #include <Windows.h>
-            #undef WIN32_LEAN_AND_MEAN
-        #endif
-        #define BIKESHED_CPU_YIELD_PRIVATE   YieldProcessor();
-    #else
-        #define BIKESHED_CPU_YIELD_PRIVATE   void();
-    #endif
+#   if defined(__clang__) || defined(__GNUC__)
+#       define BIKESHED_CPU_YIELD_PRIVATE  _mm_pause();
+#   elif defined(_MSC_VER)
+#       define BIKESHED_CPU_YIELD_PRIVATE  YieldProcessor();
+#   else
+#       define BIKESHED_CPU_YIELD_PRIVATE  void();
+#   endif
 #else
-    #define BIKESHED_CPU_YIELD_PRIVATE   BIKESHED_CPU_YIELD
+#   define BIKESHED_CPU_YIELD_PRIVATE      BIKESHED_CPU_YIELD
 #endif
 
 #if defined(BIKESHED_ASSERTS)
 #    define BIKESHED_FATAL_ASSERT_PRIVATE(x, bail) \
         if (!(x)) \
         { \
-            if (Bikeshed_Assert_private) \
-            { \
-                Bikeshed_Assert_private(#x, __FILE__, __LINE__); \
-            } \
+            if (Bikeshed_Assert_private)  { Bikeshed_Assert_private(#x, __FILE__, __LINE__); } \
             bail; \
         }
-#else // defined(BIKESHED_ASSERTS)
-#    define BIKESHED_FATAL_ASSERT_PRIVATE(x, y)
-#endif // defined(BIKESHED_ASSERTS)
-
-#if defined(BIKESHED_ASSERTS)
-static Bikeshed_Assert Bikeshed_Assert_private = 0;
-#endif // defined(BIKESHED_ASSERTS)
-
-void Bikeshed_SetAssert(Bikeshed_Assert assert_func)
-{
-#if defined(BIKESHED_ASSERTS)
-    Bikeshed_Assert_private = assert_func;
-#else  // defined(BIKESHED_ASSERTS)
-    (void)assert_func;
-#endif // defined(BIKESHED_ASSERTS)
-}
+    static Bikeshed_Assert Bikeshed_Assert_private = 0;
+    void Bikeshed_SetAssert(Bikeshed_Assert assert_func)  { Bikeshed_Assert_private = assert_func; }
+#else
+#   define BIKESHED_FATAL_ASSERT_PRIVATE(x, y)
+    void Bikeshed_SetAssert(Bikeshed_Assert assert_func) { (void)assert_func; }
+#endif
 
 #define BIKSHED_GENERATION_SHIFT_PRIVATE 23u
 #define BIKSHED_INDEX_MASK_PRIVATE       0x007fffffu
@@ -927,6 +910,6 @@ int Bikeshed_ExecuteOne(Bikeshed shed, uint8_t channel)
 
 #ifdef __cplusplus
 }
-#endif // __cplusplus
+#endif
 
 #endif // BIKESHED_INCLUDEGUARD_PRIVATE_H
