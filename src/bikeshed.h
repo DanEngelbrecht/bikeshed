@@ -422,13 +422,13 @@ struct Bikeshed_Shed_private
     void Bikeshed_SetAssert(Bikeshed_Assert assert_func) { (void)assert_func; }
 #endif
 
-#define BIKSHED_GENERATION_SHIFT_PRIVATE 23u
-#define BIKSHED_INDEX_MASK_PRIVATE       0x007fffffu
-#define BIKSHED_GENERATION_MASK_PRIVATE  0xff800000u
+#define BIKESHED_GENERATION_SHIFT_PRIVATE 23u
+#define BIKESHED_INDEX_MASK_PRIVATE       0x007fffffu
+#define BIKESHED_GENERATION_MASK_PRIVATE  0xff800000u
 
-#define BIKESHED_TASK_ID_PRIVATE(index, generation) (((Bikeshed_TaskID)(generation) << BIKSHED_GENERATION_SHIFT_PRIVATE) + index)
-#define BIKESHED_TASK_GENERATION_PRIVATE(task_id) ((int32_t)(task_id >> BIKSHED_GENERATION_SHIFT_PRIVATE))
-#define BIKESHED_TASK_INDEX_PRIVATE(task_id) ((Bikeshed_TaskIndex_private)(task_id & BIKSHED_INDEX_MASK_PRIVATE))
+#define BIKESHED_TASK_ID_PRIVATE(index, generation) (((Bikeshed_TaskID)(generation) << BIKESHED_GENERATION_SHIFT_PRIVATE) + index)
+#define BIKESHED_TASK_GENERATION_PRIVATE(task_id) ((int32_t)(task_id >> BIKESHED_GENERATION_SHIFT_PRIVATE))
+#define BIKESHED_TASK_INDEX_PRIVATE(task_id) ((Bikeshed_TaskIndex_private)(task_id & BIKESHED_INDEX_MASK_PRIVATE))
 
 static void Bikeshed_PoolInitialize_private(int32_t volatile* generation, int32_t volatile* head, int32_t volatile* items, uint32_t fill_count)
 {
@@ -519,7 +519,7 @@ static void Bikeshed_ResolveTask_private(Bikeshed shed, Bikeshed_DependencyIndex
             }
             else
             {
-                uint32_t gen = (((uint32_t)BIKESHED_ATOMICADD_PRIVATE(&shed->m_ReadyGeneration.m_Index, 1)) << BIKSHED_GENERATION_SHIFT_PRIVATE) & BIKSHED_GENERATION_MASK_PRIVATE;
+                uint32_t gen = (((uint32_t)BIKESHED_ATOMICADD_PRIVATE(&shed->m_ReadyGeneration.m_Index, 1)) << BIKESHED_GENERATION_SHIFT_PRIVATE) & BIKESHED_GENERATION_MASK_PRIVATE;
                 Bikeshed_PushRange_private(&shed->m_ReadyHeads[channel].m_Index, gen, head_resolved_task_index, &shed->m_ReadyIndexes[tail_resolved_task_index-1]);
                 if (shed->m_ReadyCallback)
                 {
@@ -541,13 +541,13 @@ static void Bikeshed_ResolveTask_private(Bikeshed shed, Bikeshed_DependencyIndex
     } while (1);
 
     {
-        uint32_t gen = (((uint32_t)BIKESHED_ATOMICADD_PRIVATE(&shed->m_DependencyIndexGeneration.m_Index, 1)) << BIKSHED_GENERATION_SHIFT_PRIVATE) & BIKSHED_GENERATION_MASK_PRIVATE;
+        uint32_t gen = (((uint32_t)BIKESHED_ATOMICADD_PRIVATE(&shed->m_DependencyIndexGeneration.m_Index, 1)) << BIKESHED_GENERATION_SHIFT_PRIVATE) & BIKESHED_GENERATION_MASK_PRIVATE;
         Bikeshed_PushRange_private(&shed->m_DependencyIndexHead.m_Index, gen, head_resolved_dependency_index, &shed->m_DependencyIndexes[tail_resolved_dependency_index-1]);
     }
 
     if (resolved_task_count > 0)
     {
-        uint32_t gen = (((uint32_t)BIKESHED_ATOMICADD_PRIVATE(&shed->m_ReadyGeneration.m_Index, 1)) << BIKSHED_GENERATION_SHIFT_PRIVATE) & BIKSHED_GENERATION_MASK_PRIVATE;
+        uint32_t gen = (((uint32_t)BIKESHED_ATOMICADD_PRIVATE(&shed->m_ReadyGeneration.m_Index, 1)) << BIKESHED_GENERATION_SHIFT_PRIVATE) & BIKESHED_GENERATION_MASK_PRIVATE;
         Bikeshed_PushRange_private(&shed->m_ReadyHeads[channel].m_Index, gen, head_resolved_task_index, &shed->m_ReadyIndexes[tail_resolved_task_index-1]);
         if (shed->m_ReadyCallback)
         {
@@ -638,7 +638,7 @@ int Bikeshed_CreateTasks(Bikeshed shed, uint32_t task_count, BikeShed_TaskFunc* 
             }
             out_task_ids[t] = task_index;
         }
-        uint32_t new_head   = (head & BIKSHED_GENERATION_MASK_PRIVATE) | (uint32_t)shed->m_TaskIndexes[task_index - 1];
+        uint32_t new_head   = (head & BIKESHED_GENERATION_MASK_PRIVATE) | (uint32_t)shed->m_TaskIndexes[task_index - 1];
         if (BIKESHED_ATOMICCAS_PRIVATE(&shed->m_TaskIndexHead.m_Index, (int32_t)head, (int32_t)new_head) == (int32_t)head)
         {
             break;
@@ -700,11 +700,11 @@ void Bikeshed_FreeTasks(Bikeshed shed, uint32_t task_count, const Bikeshed_TaskI
 
     if (head_resolved_dependency_index)
     {
-        uint32_t gen = (((uint32_t)BIKESHED_ATOMICADD_PRIVATE(&shed->m_DependencyIndexGeneration.m_Index, 1)) << BIKSHED_GENERATION_SHIFT_PRIVATE) & BIKSHED_GENERATION_MASK_PRIVATE;
+        uint32_t gen = (((uint32_t)BIKESHED_ATOMICADD_PRIVATE(&shed->m_DependencyIndexGeneration.m_Index, 1)) << BIKESHED_GENERATION_SHIFT_PRIVATE) & BIKESHED_GENERATION_MASK_PRIVATE;
         Bikeshed_PushRange_private(&shed->m_DependencyIndexHead.m_Index, gen, head_resolved_dependency_index, &shed->m_DependencyIndexes[tail_resolved_dependency_index-1]);
     }
 
-    uint32_t gen = (((uint32_t)BIKESHED_ATOMICADD_PRIVATE(&shed->m_TaskIndexGeneration.m_Index, 1)) << BIKSHED_GENERATION_SHIFT_PRIVATE) & BIKSHED_GENERATION_MASK_PRIVATE;
+    uint32_t gen = (((uint32_t)BIKESHED_ATOMICADD_PRIVATE(&shed->m_TaskIndexGeneration.m_Index, 1)) << BIKESHED_GENERATION_SHIFT_PRIVATE) & BIKESHED_GENERATION_MASK_PRIVATE;
     Bikeshed_PushRange_private(&shed->m_TaskIndexHead.m_Index, gen, head_free_task_index, &shed->m_TaskIndexes[tail_free_task_index-1]);
 }
 
@@ -752,7 +752,7 @@ int Bikeshed_AddDependencies(Bikeshed shed, uint32_t task_count, const Bikeshed_
                 return 0;
             }
         }
-        uint32_t new_head   = (dependency_index_head & BIKSHED_GENERATION_MASK_PRIVATE) | (uint32_t)shed->m_DependencyIndexes[dependency_index - 1];
+        uint32_t new_head   = (dependency_index_head & BIKESHED_GENERATION_MASK_PRIVATE) | (uint32_t)shed->m_DependencyIndexes[dependency_index - 1];
         if (BIKESHED_ATOMICCAS_PRIVATE(&shed->m_DependencyIndexHead.m_Index, (int32_t)dependency_index_head, (int32_t)new_head) == (int32_t)dependency_index_head)
         {
             break;
@@ -801,7 +801,7 @@ void Bikeshed_ReadyTasks(Bikeshed shed, uint32_t task_count, const Bikeshed_Task
     BIKESHED_FATAL_ASSERT_PRIVATE(0x20000000 == BIKESHED_ATOMICADD_PRIVATE(&head_task->m_ChildDependencyCount, 0x20000000), return)
 
     uint8_t channel = (uint8_t)head_task->m_Channel;
-    uint32_t gen = (((uint32_t)BIKESHED_ATOMICADD_PRIVATE(&shed->m_ReadyGeneration.m_Index, 1)) << BIKSHED_GENERATION_SHIFT_PRIVATE) & BIKSHED_GENERATION_MASK_PRIVATE;
+    uint32_t gen = (((uint32_t)BIKESHED_ATOMICADD_PRIVATE(&shed->m_ReadyGeneration.m_Index, 1)) << BIKESHED_GENERATION_SHIFT_PRIVATE) & BIKESHED_GENERATION_MASK_PRIVATE;
     uint32_t ready_task_count = 1;
     uint32_t i = 1;
     while (i < task_count)
@@ -862,7 +862,7 @@ int Bikeshed_ExecuteOne(Bikeshed shed, uint8_t channel)
         }
 
         uint32_t next       = (uint32_t)items[task_index - 1];
-        uint32_t new_head   = (current_head & BIKSHED_GENERATION_MASK_PRIVATE) | next;
+        uint32_t new_head   = (current_head & BIKESHED_GENERATION_MASK_PRIVATE) | next;
 
         if (BIKESHED_ATOMICCAS_PRIVATE(head, (int32_t)current_head, (int32_t)new_head) == (int32_t)current_head)
         {
@@ -885,7 +885,7 @@ int Bikeshed_ExecuteOne(Bikeshed shed, uint8_t channel)
             Bikeshed_ResolveTask_private(shed, task->m_FirstDependencyIndex);
             task->m_FirstDependencyIndex = 0;
         }
-        uint32_t gen = (((uint32_t)BIKESHED_ATOMICADD_PRIVATE(&shed->m_TaskIndexGeneration.m_Index, 1)) << BIKSHED_GENERATION_SHIFT_PRIVATE) & BIKSHED_GENERATION_MASK_PRIVATE;
+        uint32_t gen = (((uint32_t)BIKESHED_ATOMICADD_PRIVATE(&shed->m_TaskIndexGeneration.m_Index, 1)) << BIKESHED_GENERATION_SHIFT_PRIVATE) & BIKESHED_GENERATION_MASK_PRIVATE;
         Bikeshed_PushRange_private(&shed->m_TaskIndexHead.m_Index, gen, task_index, &shed->m_TaskIndexes[task_index-1]);
     }
     else
@@ -899,9 +899,9 @@ int Bikeshed_ExecuteOne(Bikeshed shed, uint8_t channel)
 
 #undef BIKESHED_ATOMICADD_PRIVATE
 #undef BIKESHED_ATOMICCAS_PRIVATE
-#undef BIKSHED_GENERATION_SHIFT_PRIVATE
-#undef BIKSHED_INDEX_MASK_PRIVATE
-#undef BIKSHED_GENERATION_MASK_PRIVATE
+#undef BIKESHED_GENERATION_SHIFT_PRIVATE
+#undef BIKESHED_INDEX_MASK_PRIVATE
+#undef BIKESHED_GENERATION_MASK_PRIVATE
 #undef BIKESHED_TASK_ID_PRIVATE
 #undef BIKESHED_TASK_GENERATION_PRIVATE
 #undef BIKESHED_TASK_INDEX_PRIVATE
